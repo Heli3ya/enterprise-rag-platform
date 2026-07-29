@@ -44,6 +44,7 @@ INSTALLED_APPS = [
     'rest_framework',
     'api',
     'corsheaders',
+    'drf_spectacular',
 ]
 
 MIDDLEWARE = [
@@ -129,11 +130,18 @@ STATIC_URL = 'static/'
 AUTH_USER_MODEL = 'accounts.User'
 
 REST_FRAMEWORK = {
-    "DEFAULT_AUTHENTICATION_CLASSES": (
-        "rest_framework_simplejwt.authentication.JWTAuthentication",
+    'DEFAULT_AUTHENTICATION_CLASSES': (
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
     ),
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
 }
 
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
 ]
+
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'Enterprise RAG API',
+    'DESCRIPTION': 'API documentation for Enterprise RAG Platform',
+    'VERSION': '1.0.0',
+}
