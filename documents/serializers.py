@@ -16,26 +16,40 @@ ALLOWED_FILE_TYPES = {
 
 
 class DocumentSerializer(serializers.ModelSerializer):
-
+    file_path = serializers.FileField()
     class Meta:
         model = Document
-        fields = '__all__'
+        fields = [
+            "title",
+            "file_path",
+            "department",
+        ]
+
+
+    def validate_title(self, value):
+        if not value or not value.strip():
+            raise serializers.ValidationError(
+                "Title is required."
+            )
+
+        return value
+
 
     def validate_file_path(self, file):
 
-        # بررسی حجم فایل
         if file.size > MAX_FILE_SIZE:
             raise serializers.ValidationError(
                 "File size must be less than 5 MB."
             )
 
-        # تشخیص واقعی نوع فایل
+
         file_type = magic.from_buffer(
             file.read(2048),
             mime=True
         )
 
         file.seek(0)
+
 
         if file_type not in ALLOWED_FILE_TYPES:
             raise serializers.ValidationError(

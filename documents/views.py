@@ -1,8 +1,47 @@
-from rest_framework import generics
+from rest_framework import generics, status
+from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.parsers import MultiPartParser, FormParser
 from .models import Document
 from .serializers import DocumentSerializer
+from drf_spectacular.utils import extend_schema
 
+
+@extend_schema(
+    request=DocumentSerializer,
+    responses=DocumentSerializer
+)
 
 class DocumentUploadView(generics.CreateAPIView):
+
     queryset = Document.objects.all()
     serializer_class = DocumentSerializer
+    permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
+
+    def perform_create(self, serializer):
+        serializer.save(
+            uploaded_by=self.request.user,
+            status="Pending"
+        )
+
+
+    def create(self, request, *args, **kwargs):
+
+        serializer = self.get_serializer(
+            data=request.data
+        )
+
+        serializer.is_valid(
+            raise_exception=True
+        )
+
+        self.perform_create(serializer)
+
+        return Response(
+            {
+                "document_id": serializer.instance.id,
+                "status": serializer.instance.status
+            },
+            status=status.HTTP_201_CREATED
+        )

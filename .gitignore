@@ -18,3 +18,5 @@ Thumbs.db
 
 # macOS
 .DS_Store
+media/
+documents/small_test.txt.txt

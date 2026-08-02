@@ -145,4 +145,7 @@ SPECTACULAR_SETTINGS = {
     'TITLE': 'Enterprise RAG API',
     'DESCRIPTION': 'API documentation for Enterprise RAG Platform',
     'VERSION': '1.0.0',
+    'COMPONENT_SPLIT_REQUEST': True,
 }
+MEDIA_URL = '/media/'
+MEDIA_ROOT = BASE_DIR / 'media'
