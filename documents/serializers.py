@@ -57,3 +57,17 @@ class DocumentSerializer(serializers.ModelSerializer):
             )
 
         return file
+    
+class DocumentStatusSerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = Document
+        fields = [
+            "id",
+            "title",
+            "file_type",
+            "status",
+            "department",
+            "uploaded_by",
+            "created_at",
+        ]   

@@ -1,3 +1,4 @@
+import magic
 from rest_framework import generics, status
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
@@ -5,7 +6,8 @@ from rest_framework.parsers import MultiPartParser, FormParser
 from .models import Document
 from .serializers import DocumentSerializer
 from drf_spectacular.utils import extend_schema
-
+from .serializers import DocumentStatusSerializer
+from rest_framework.exceptions import PermissionDenied
 
 @extend_schema(
     request=DocumentSerializer,
@@ -20,10 +22,20 @@ class DocumentUploadView(generics.CreateAPIView):
     parser_classes = [MultiPartParser, FormParser]
 
     def perform_create(self, serializer):
-        serializer.save(
-            uploaded_by=self.request.user,
-            status="Pending"
-        )
+     file = self.request.FILES.get("file_path")
+
+     file_type = magic.from_buffer(
+        file.read(2048),
+        mime=True
+    )
+
+     file.seek(0)
+
+     serializer.save(
+        uploaded_by=self.request.user,
+        status="Pending",
+        file_type=file_type
+    )
 
 
     def create(self, request, *args, **kwargs):
@@ -45,3 +57,20 @@ class DocumentUploadView(generics.CreateAPIView):
             },
             status=status.HTTP_201_CREATED
         )
+    
+
+class DocumentStatusView(generics.RetrieveAPIView):
+    serializer_class = DocumentStatusSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_object(self):
+        document = Document.objects.get(
+            id=self.kwargs["pk"]
+        )
+
+        if document.department != self.request.user.department:
+            raise PermissionDenied(
+                "You do not have permission to access this document."
+            )
+
+        return document
