@@ -74,3 +74,26 @@ class DocumentStatusView(generics.RetrieveAPIView):
             )
 
         return document
+    
+class DocumentDeleteView(generics.DestroyAPIView):
+    queryset = Document.objects.all()
+    permission_classes = [IsAuthenticated]
+
+    def get_object(self):
+        document = super().get_object()
+
+        if (
+            document.uploaded_by != self.request.user
+            and self.request.user.role != "Admin"
+        ):
+            raise PermissionDenied(
+                "You do not have permission to delete this document."
+            )
+
+        return document
+
+    def perform_destroy(self, instance):
+        if instance.file_path:
+            instance.file_path.delete(save=False)
+
+        instance.delete()
