@@ -1,5 +1,6 @@
 from django.db import models
 from django.conf import settings
+from pgvector.django import VectorField
 from departments.models import Department
 
 
@@ -60,3 +61,20 @@ class DocumentChunk(models.Model):
 
     def __str__(self):
         return f'{self.document.title} - Chunk {self.chunk_index}'
+    
+
+class Embedding(models.Model):
+    chunk = models.ForeignKey(
+        DocumentChunk,
+        on_delete=models.CASCADE,
+        related_name='embeddings'
+    )
+
+    embedding_vector = VectorField(dimensions=384)
+
+    model_name = models.CharField(max_length=100)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f'{self.chunk} - {self.model_name}'
