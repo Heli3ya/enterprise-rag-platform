@@ -8,7 +8,7 @@ class Document(models.Model):
     STATUS_CHOICES = (
         ('Pending', 'Pending'),
         ('Processing', 'Processing'),
-        ('Completed', 'Completed'),
+        ('Indexed', 'Indexed'),
         ('Failed', 'Failed'),
     )
 
@@ -39,6 +39,7 @@ class Document(models.Model):
     def __str__(self):
         return self.title
 
+
 class DocumentChunk(models.Model):
     document = models.ForeignKey(
         Document,
@@ -61,7 +62,7 @@ class DocumentChunk(models.Model):
 
     def __str__(self):
         return f'{self.document.title} - Chunk {self.chunk_index}'
-    
+
 
 class Embedding(models.Model):
     chunk = models.ForeignKey(

@@ -1,12 +1,10 @@
 import requests
-
-
-AI_SERVICE_URL = "http://127.0.0.1:8001"
+from django.conf import settings
 
 
 def generate_embeddings(texts):
     response = requests.post(
-        f"{AI_SERVICE_URL}/api/embed/",
+        f"{settings.AI_SERVICE_URL}/api/embed/",
         json={"texts": texts},
         timeout=60,
     )
