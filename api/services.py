@@ -1,7 +1,9 @@
 import requests
 from django.conf import settings
 from pgvector.django import CosineDistance
-from documents.models import Embedding
+
+from django.contrib.postgres.search import SearchVector, SearchQuery, SearchRank
+from documents.models import DocumentChunk, Embedding
 
 def generate_embeddings(texts):
     response = requests.post(
@@ -57,3 +59,119 @@ def semantic_search(query, limit=5):
     )
 
     return results
+
+def keyword_search(query, limit=5):
+    search_query = SearchQuery(
+        query,
+        config="simple",
+    )
+
+    results = (
+        DocumentChunk.objects
+        .select_related("document")
+        .annotate(
+            search_vector=SearchVector(
+                "content",
+                config="simple",
+            ),
+        )
+        .filter(search_vector=search_query)
+        .annotate(
+            rank=SearchRank(
+                "search_vector",
+                search_query,
+            )
+        )
+        .order_by("-rank")[:limit]
+    )
+
+    return results
+
+def normalize_scores(scores):
+    if not scores:
+        return {}
+
+    min_score = min(scores.values())
+    max_score = max(scores.values())
+
+    if max_score == min_score:
+        return {
+            key: 1.0
+            for key in scores
+        }
+
+    return {
+        key: (score - min_score) / (max_score - min_score)
+        for key, score in scores.items()
+    }
+
+def hybrid_search(query, limit=5):
+    semantic_results = list(
+        semantic_search(query, limit=limit * 2)
+    )
+
+    keyword_results = list(
+        keyword_search(query, limit=limit * 2)
+    )
+
+    semantic_scores = {
+        result.chunk_id: 1.0 - float(result.distance)
+        for result in semantic_results
+    }
+
+    keyword_scores = {
+        result.id: float(result.rank)
+        for result in keyword_results
+    }
+
+    semantic_scores = normalize_scores(semantic_scores)
+    keyword_scores = normalize_scores(keyword_scores)
+
+    all_chunk_ids = set(semantic_scores) | set(keyword_scores)
+
+    semantic_by_id = {
+        result.chunk_id: result
+        for result in semantic_results
+    }
+
+    keyword_by_id = {
+        result.id: result
+        for result in keyword_results
+    }
+
+    fused_results = []
+
+    for chunk_id in all_chunk_ids:
+        semantic_score = semantic_scores.get(chunk_id, 0.0)
+        keyword_score = keyword_scores.get(chunk_id, 0.0)
+
+        score = (
+            0.7 * semantic_score
+            + 0.3 * keyword_score
+        )
+
+        result = (
+            semantic_by_id.get(chunk_id)
+            or keyword_by_id.get(chunk_id)
+        )
+
+        content = result.chunk.content if hasattr(result, "chunk") else result.content
+
+        if query.lower() in content.lower():
+            score += 0.2
+
+        fused_results.append(
+            {
+                "chunk_id": chunk_id,
+                "score": score,
+                "content": content,
+                "result": result,
+            }
+        )
+
+    fused_results.sort(
+        key=lambda item: item["score"],
+        reverse=True,
+    )
+
+    return fused_results[:limit]

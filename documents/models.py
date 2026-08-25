@@ -4,6 +4,7 @@ from pgvector.django import VectorField
 from departments.models import Department
 
 
+
 class Document(models.Model):
     STATUS_CHOICES = (
         ('Pending', 'Pending'),
@@ -50,15 +51,17 @@ class DocumentChunk(models.Model):
     content = models.TextField()
 
     chunk_index = models.PositiveIntegerField()
+class Meta:
+    ordering = ['chunk_index']
 
-    class Meta:
-        ordering = ['chunk_index']
-        constraints = [
-            models.UniqueConstraint(
-                fields=['document', 'chunk_index'],
-                name='unique_document_chunk_index'
-            )
-        ]
+    constraints = [
+        models.UniqueConstraint(
+            fields=['document', 'chunk_index'],
+            name='unique_document_chunk_index'
+        )
+    ]
+
+  
 
     def __str__(self):
         return f'{self.document.title} - Chunk {self.chunk_index}'

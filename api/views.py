@@ -4,7 +4,7 @@ from rest_framework import status
 from rest_framework_simplejwt.views import TokenObtainPairView
 from drf_spectacular.utils import extend_schema, OpenApiResponse
 from documents.models import DocumentChunk, Embedding
-from .services import generate_embeddings , semantic_search
+from .services import generate_embeddings , semantic_search , hybrid_search
 
 
 @api_view(["POST"])
@@ -113,7 +113,7 @@ def semantic_search_view(request):
         )
 
     try:
-        results = semantic_search(query, limit=5)
+        results = hybrid_search(query, limit=5)
     except Exception as exc:
         return Response(
             {"error": str(exc)},
@@ -121,19 +121,31 @@ def semantic_search_view(request):
         )
 
     return Response(
-        {
-            "query": query,
-            "results": [
-                {
-                    "document_id": result.chunk.document_id,
-                    "document_title": result.chunk.document.title,
-                    "chunk_id": result.chunk_id,
-                    "chunk_index": result.chunk.chunk_index,
-                    "distance": float(result.distance),
-                    "content": result.chunk.content,
-                }
-                for result in results
-            ],
-        },
-        status=status.HTTP_200_OK,
-    )
+    {
+        "query": query,
+        "results": [
+            {
+                "document_id": (
+                    result["result"].chunk.document_id
+                    if hasattr(result["result"], "chunk")
+                    else result["result"].document_id
+                ),
+                "document_title": (
+                    result["result"].chunk.document.title
+                    if hasattr(result["result"], "chunk")
+                    else result["result"].document.title
+                ),
+                "chunk_id": result["chunk_id"],
+                "chunk_index": (
+                    result["result"].chunk.chunk_index
+                    if hasattr(result["result"], "chunk")
+                    else result["result"].chunk_index
+                ),
+                "score": round(float(result["score"]), 6),
+                "content": result["content"],
+            }
+            for result in results
+        ],
+    },
+    status=status.HTTP_200_OK,
+)
