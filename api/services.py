@@ -6,6 +6,7 @@ from django.contrib.postgres.search import (
     SearchQuery,
     SearchRank,
 )
+from django.db import models
 from documents.models import DocumentChunk, Embedding
 def generate_embeddings(texts):
     response = requests.post(
@@ -34,7 +35,7 @@ def generate_query_embedding(query):
             "Query embedding dimension must be 384."
         )
     return embeddings[0]
-def semantic_search(query, limit=5):
+def semantic_search(query, limit=5, user=None):
     query_vector = generate_query_embedding(query)
     results = (
         Embedding.objects
@@ -45,10 +46,16 @@ def semantic_search(query, limit=5):
                 query_vector,
             )
         )
+        .filter(
+            models.Q(chunk__document__is_public=True)
+            | models.Q(
+                chunk__document__department_id=user.department_id
+            )
+        )
         .order_by("distance")[:limit]
     )
     return results
-def keyword_search(query, limit=5):
+def keyword_search(query, limit=5, user=None):
     search_query = SearchQuery(
         query,
         config="simple",
@@ -63,6 +70,12 @@ def keyword_search(query, limit=5):
             ),
         )
         .filter(search_vector=search_query)
+        .filter(
+            models.Q(document__is_public=True)
+            | models.Q(
+                document__department_id=user.department_id
+            )
+        )
         .annotate(
             rank=SearchRank(
                 "search_vector",
@@ -124,13 +137,23 @@ def rerank_results(query, results):
     )
     return reranked_results
 
-def hybrid_search(query, limit=5):
+def hybrid_search(query, limit=5, user=None):
     initial_limit = limit * 3
+
     semantic_results = list(
-        semantic_search(query, limit=initial_limit)
+        semantic_search(
+            query,
+            limit=initial_limit,
+            user=user,
+        )
     )
+
     keyword_results = list(
-        keyword_search(query, limit=initial_limit)
+        keyword_search(
+            query,
+            limit=initial_limit,
+            user=user,
+        )
     )
     semantic_scores = {
         result.chunk_id: 1.0 - float(result.distance)

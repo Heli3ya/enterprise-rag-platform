@@ -34,7 +34,9 @@ class Document(models.Model):
         Department,
         on_delete=models.CASCADE
     )
-
+    is_public = models.BooleanField(
+    default=False
+)
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):

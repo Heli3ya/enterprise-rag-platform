@@ -1,0 +1,15 @@
+from rest_framework import serializers
+
+
+class SearchQuerySerializer(serializers.Serializer):
+    query_text = serializers.CharField(
+        max_length=1000,
+        allow_blank=False,
+        trim_whitespace=True,
+    )
+
+    top_k = serializers.IntegerField(
+        min_value=1,
+        max_value=50,
+        default=5,
+    )

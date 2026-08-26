@@ -3,9 +3,13 @@ from rest_framework.response import Response
 from rest_framework import status
 from rest_framework_simplejwt.views import TokenObtainPairView
 from drf_spectacular.utils import extend_schema, OpenApiResponse
-from documents.models import DocumentChunk, Embedding
+from documents.models import DocumentChunk, Embedding ,  SearchQuery,QueryResult
 from .services import generate_embeddings , semantic_search , hybrid_search
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.decorators import permission_classes
+from django.db import transaction
 
+from .serializers import SearchQuerySerializer
 
 @api_view(["POST"])
 def create_embeddings(request):
@@ -149,3 +153,73 @@ def semantic_search_view(request):
     },
     status=status.HTTP_200_OK,
 )
+
+@extend_schema(
+    request=SearchQuerySerializer,
+    responses=OpenApiResponse(
+        description="Search results",
+    ),
+)
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def search_query_view(request):
+    serializer = SearchQuerySerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+
+    query_text = serializer.validated_data["query_text"]
+    top_k = serializer.validated_data["top_k"]
+
+    try:
+        results = hybrid_search(
+            query_text,
+            limit=top_k,
+            user = request.user,
+        )
+    except Exception as exc:
+        return Response(
+            {"error": str(exc)},
+            status=status.HTTP_502_BAD_GATEWAY,
+        )
+    with transaction.atomic():
+        search_query = SearchQuery.objects.create(
+            user=request.user,
+            query_text=query_text,
+        )
+
+        QueryResult.objects.bulk_create(
+            [
+                QueryResult(
+                    query=search_query,
+                    chunk_id=result["chunk_id"],
+                    relevance_score=float(result["rerank_score"]),
+                )
+                for result in results
+            ]
+        )
+    return Response(
+        {
+            "query_text": query_text,
+            "results": [
+                {
+                    "chunk_id": result["chunk_id"],
+                    "document_id": (
+                        result["result"].chunk.document_id
+                        if hasattr(result["result"], "chunk")
+                        else result["result"].document_id
+                    ),
+                    "document_title": (
+                        result["result"].chunk.document.title
+                        if hasattr(result["result"], "chunk")
+                        else result["result"].document.title
+                    ),
+                    "score": round(
+                        float(result["rerank_score"]),
+                        6,
+                    ),
+                    "content": result["content"],
+                }
+                for result in results
+            ],
+        },
+        status=status.HTTP_200_OK,
+    )
