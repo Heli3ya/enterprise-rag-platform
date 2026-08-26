@@ -82,3 +82,35 @@ class Embedding(models.Model):
 
     def __str__(self):
         return f'{self.chunk} - {self.model_name}'
+    
+class SearchQuery(models.Model):
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='search_queries'
+    )
+
+    query_text = models.TextField()
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.query_text
+    
+class QueryResult(models.Model):
+    query = models.ForeignKey(
+        SearchQuery,
+        on_delete=models.CASCADE,
+        related_name='results'
+    )
+
+    chunk = models.ForeignKey(
+        DocumentChunk,
+        on_delete=models.CASCADE,
+        related_name='query_results'
+    )
+
+    relevance_score = models.FloatField()
+
+    def __str__(self):
+        return f'{self.query.query_text} - Chunk {self.chunk_id}'
