@@ -1,4 +1,5 @@
 import requests
+import re
 from django.conf import settings
 from pgvector.django import CosineDistance
 from django.contrib.postgres.search import (
@@ -216,3 +217,123 @@ def hybrid_search(query, limit=5, user=None):
         fused_results,
     )
     return reranked_results[:limit]
+
+def build_rag_prompt(query, results):
+    context_parts = []
+
+    for result in results:
+        context_parts.append(
+            f"[{result['chunk_id']}]\n"
+            f"{result['content']}"
+        )
+
+    context = "\n\n".join(context_parts)
+
+    return f"""
+You are an enterprise document question-answering assistant.
+
+Answer the user's question using ONLY the provided document context.
+
+User question:
+{query}
+
+Document context:
+{context}
+
+Citation rules:
+- Use the provided context only.
+- After every sentence that relies on a document chunk, add the chunk ID in square brackets.
+- Use the exact chunk ID provided in the context.
+- Do not invent or modify citation IDs.
+- If a sentence uses multiple chunks, cite all relevant IDs.
+- Do not add citations for information that is not supported by the provided context.
+
+Return only the answer with inline citations.
+""".strip()
+
+def extract_citation_ids(answer):
+    return sorted(
+        {
+            int(citation_id)
+            for citation_id in re.findall(r"\[(\d+)\]", answer)
+        }
+    )
+
+def build_citations(citation_ids):
+    chunks = (
+        DocumentChunk.objects
+        .select_related("document", "document__department")
+        .filter(id__in=citation_ids)
+    )
+
+    chunks_by_id = {
+        chunk.id: chunk
+        for chunk in chunks
+    }
+
+    citations = []
+
+    for citation_id in citation_ids:
+        chunk = chunks_by_id.get(citation_id)
+
+        if chunk is None:
+            continue
+
+        document = chunk.document
+
+        citations.append(
+            {
+                "document_id": document.id,
+                "filename": document.file_path.name,
+                "department": document.department.name,
+                "chunk_id": chunk.id,
+            }
+        )
+
+    return citations
+
+def generate_rag_answer(query, limit=5, user=None):
+    results = hybrid_search(
+        query,
+        limit=limit,
+        user=user,
+    )
+
+    if not results:
+        return {
+            "answer": "No relevant documents were found.",
+            "citations": [],
+        }
+
+    prompt = build_rag_prompt(
+        query,
+        results,
+    )
+
+    response = requests.post(
+        f"{settings.AI_SERVICE_URL}/api/generate/",
+        json={
+            "prompt": prompt,
+        },
+        timeout=120,
+    )
+
+    response.raise_for_status()
+
+    data = response.json()
+
+    answer = data.get("response")
+
+    if not answer:
+        raise RuntimeError(
+            "LLM response text is missing"
+        )
+
+    citation_ids = extract_citation_ids(answer)
+
+    citations = build_citations(citation_ids)
+
+    return {
+        "answer": answer,
+        "citations": citations,
+    }

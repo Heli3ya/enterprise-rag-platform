@@ -8,7 +8,7 @@ from .services import generate_embeddings , semantic_search , hybrid_search
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.decorators import permission_classes
 from django.db import transaction
-
+from .services import generate_rag_answer
 from .serializers import SearchQuerySerializer
 
 @api_view(["POST"])
@@ -220,6 +220,40 @@ def search_query_view(request):
                 }
                 for result in results
             ],
+        },
+        status=status.HTTP_200_OK,
+    )
+@extend_schema(
+    request=SearchQuerySerializer,
+    responses=OpenApiResponse(
+        description="RAG answer with citations",
+    ),
+)
+@api_view(["POST"])
+def rag_query_view(request):
+    serializer = SearchQuerySerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+
+    query_text = serializer.validated_data["query_text"]
+    top_k = serializer.validated_data["top_k"]
+
+    try:
+        result = generate_rag_answer(
+            query_text,
+            limit=top_k,
+            user=request.user,
+        )
+    except Exception as exc:
+        return Response(
+            {"error": str(exc)},
+            status=status.HTTP_502_BAD_GATEWAY,
+        )
+
+    return Response(
+        {
+            "query_text": query_text,
+            "answer": result["answer"],
+            "citations": result["citations"],
         },
         status=status.HTTP_200_OK,
     )
