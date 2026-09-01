@@ -337,3 +337,62 @@ def generate_rag_answer(query, limit=5, user=None):
         "answer": answer,
         "citations": citations,
     }
+
+def generate_rag_stream(query, limit=5, user=None):
+    results = hybrid_search(
+        query,
+        limit=limit,
+        user=user,
+    )
+
+    if not results:
+        yield {
+            "type": "error",
+            "message": "No relevant documents were found.",
+        }
+        return
+
+    prompt = build_rag_prompt(
+        query,
+        results,
+    )
+
+    response = requests.post(
+        f"{settings.AI_SERVICE_URL}/api/generate/stream/",
+        json={
+            "prompt": prompt,
+        },
+        stream=True,
+        timeout=120,
+    )
+
+    response.raise_for_status()
+
+    full_answer = ""
+
+    for chunk in response.iter_content(
+        chunk_size=None,
+        decode_unicode=True,
+    ):
+        if not chunk:
+            continue
+
+        full_answer += chunk
+
+        yield {
+            "type": "token",
+            "content": chunk,
+        }
+
+    citation_ids = extract_citation_ids(full_answer)
+
+    citations = build_citations(citation_ids)
+
+    yield {
+        "type": "citations",
+        "citations": citations,
+    }
+
+    yield {
+        "type": "done",
+    }

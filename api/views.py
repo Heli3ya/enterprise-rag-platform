@@ -8,7 +8,9 @@ from .services import generate_embeddings , semantic_search , hybrid_search
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.decorators import permission_classes
 from django.db import transaction
-from .services import generate_rag_answer
+import json
+from django.http import StreamingHttpResponse
+from .services import generate_rag_answer , generate_rag_stream
 from .serializers import ( SearchQuerySerializer , ChatAskSerializer , )
 
 @api_view(["POST"])
@@ -261,39 +263,7 @@ def rag_query_view(request):
     request=ChatAskSerializer,
     responses={
         200: OpenApiResponse(
-            description="Chat answer with citations",
-            response={
-                "type": "object",
-                "properties": {
-                    "answer": {
-                        "type": "string",
-                    },
-                    "citations": {
-                        "type": "array",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "document_id": {
-                                    "type": "integer",
-                                },
-                                "filename": {
-                                    "type": "string",
-                                },
-                                "department": {
-                                    "type": "string",
-                                },
-                                "chunk_id": {
-                                    "type": "integer",
-                                },
-                            },
-                        },
-                    },
-                },
-                "required": [
-                    "answer",
-                    "citations",
-                ],
-            },
+            description="Streaming chat answer with citations",
         ),
     },
 )
@@ -304,21 +274,57 @@ def chat_ask_view(request):
 
     question = serializer.validated_data["question"]
 
-    try:
-        result = generate_rag_answer(
-            question,
-            user=request.user,
-        )
-    except Exception as exc:
-        return Response(
-            {"error": str(exc)},
-            status=status.HTTP_502_BAD_GATEWAY,
-        )
+    def event_stream():
+        try:
+            for event in generate_rag_stream(
+                question,
+                user=request.user,
+            ):
+                event_type = event["type"]
 
-    return Response(
-        {
-            "answer": result["answer"],
-            "citations": result["citations"],
-        },
-        status=status.HTTP_200_OK,
+                if event_type == "token":
+                    data = {
+                        "content": event["content"],
+                    }
+
+                    yield (
+                        "event: token\n"
+                        f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
+                    )
+
+                elif event_type == "citations":
+                    yield (
+                        "event: citations\n"
+                        f"data: {json.dumps(event['citations'], ensure_ascii=False)}\n\n"
+                    )
+
+                elif event_type == "error":
+                    data = {
+                        "error": event["message"],
+                    }
+
+                    yield (
+                        "event: error\n"
+                        f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
+                    )
+
+                elif event_type == "done":
+                    yield (
+                        "event: done\n"
+                        "data: {}\n\n"
+                    )
+
+        except Exception as exc:
+            data = {
+                "error": str(exc),
+            }
+
+            yield (
+                "event: error\n"
+                f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
+            )
+
+    return StreamingHttpResponse(
+        event_stream(),
+        content_type="text/event-stream",
     )
