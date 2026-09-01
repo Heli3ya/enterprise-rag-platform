@@ -13,3 +13,16 @@ class SearchQuerySerializer(serializers.Serializer):
         max_value=50,
         default=5,
     )
+
+class ChatAskSerializer(serializers.Serializer):
+    question = serializers.CharField(
+        max_length=1000,
+        allow_blank=False,
+        trim_whitespace=True,
+    )
+
+    conversation_id = serializers.CharField(
+        max_length=255,
+        allow_blank=False,
+        trim_whitespace=True,
+    )

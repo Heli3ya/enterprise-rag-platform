@@ -9,7 +9,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.decorators import permission_classes
 from django.db import transaction
 from .services import generate_rag_answer
-from .serializers import SearchQuerySerializer
+from .serializers import ( SearchQuerySerializer , ChatAskSerializer , )
 
 @api_view(["POST"])
 def create_embeddings(request):
@@ -252,6 +252,71 @@ def rag_query_view(request):
     return Response(
         {
             "query_text": query_text,
+            "answer": result["answer"],
+            "citations": result["citations"],
+        },
+        status=status.HTTP_200_OK,
+    )
+@extend_schema(
+    request=ChatAskSerializer,
+    responses={
+        200: OpenApiResponse(
+            description="Chat answer with citations",
+            response={
+                "type": "object",
+                "properties": {
+                    "answer": {
+                        "type": "string",
+                    },
+                    "citations": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "document_id": {
+                                    "type": "integer",
+                                },
+                                "filename": {
+                                    "type": "string",
+                                },
+                                "department": {
+                                    "type": "string",
+                                },
+                                "chunk_id": {
+                                    "type": "integer",
+                                },
+                            },
+                        },
+                    },
+                },
+                "required": [
+                    "answer",
+                    "citations",
+                ],
+            },
+        ),
+    },
+)
+@api_view(["POST"])
+def chat_ask_view(request):
+    serializer = ChatAskSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+
+    question = serializer.validated_data["question"]
+
+    try:
+        result = generate_rag_answer(
+            question,
+            user=request.user,
+        )
+    except Exception as exc:
+        return Response(
+            {"error": str(exc)},
+            status=status.HTTP_502_BAD_GATEWAY,
+        )
+
+    return Response(
+        {
             "answer": result["answer"],
             "citations": result["citations"],
         },
