@@ -7,7 +7,7 @@ from documents.models import DocumentChunk, Embedding ,  SearchQuery,QueryResult
 from .services import generate_embeddings , semantic_search , hybrid_search
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.decorators import permission_classes
-from django.db import transaction
+from django.db import models , transaction
 import json
 from django.http import StreamingHttpResponse
 from .services import generate_rag_answer , generate_rag_stream
@@ -182,6 +182,35 @@ def search_query_view(request):
             {"error": str(exc)},
             status=status.HTTP_502_BAD_GATEWAY,
         )
+    result_chunk_ids = [
+        result["chunk_id"]
+        for result in results
+    ]
+
+    allowed_chunk_ids = set(
+        DocumentChunk.objects.filter(
+            id__in=result_chunk_ids
+        ).filter(
+            models.Q(document__is_public=True)
+            | models.Q(
+                document__department_id=request.user.department_id
+            )
+        ).values_list(
+            "id",
+            flat=True,
+        )
+    )
+
+    results = [
+        result
+        for result in results
+        if result["chunk_id"] in allowed_chunk_ids
+    ]
+    results = [
+        result
+        for result in results
+        if float(result["rerank_score"]) > 0
+    ]
     with transaction.atomic():
         search_query = SearchQuery.objects.create(
             user=request.user,

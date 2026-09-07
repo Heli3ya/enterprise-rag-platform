@@ -8,6 +8,7 @@ from django.contrib.postgres.search import (
     SearchRank,
 )
 from django.db import models
+from types import SimpleNamespace
 from documents.models import DocumentChunk, Embedding
 def generate_embeddings(texts):
     response = requests.post(
@@ -36,34 +37,75 @@ def generate_query_embedding(query):
             "Query embedding dimension must be 384."
         )
     return embeddings[0]
+
+def get_user_department_id(user):
+    if user is None or not user.is_authenticated:
+        return None
+
+    return user.department_id
 def semantic_search(query, limit=5, user=None):
-    query_vector = generate_query_embedding(query)
-    results = (
-        Embedding.objects
-        .select_related("chunk__document")
-        .annotate(
-            distance=CosineDistance(
-                "embedding_vector",
-                query_vector,
-            )
-        )
-        .filter(
-            models.Q(chunk__document__is_public=True)
-            | models.Q(
-                chunk__document__department_id=user.department_id
-            )
-        )
-        .order_by("distance")[:limit]
+    if user is None or user.department_id is None:
+        return []
+
+    response = requests.post(
+        f"{settings.AI_SERVICE_URL}/api/vector-search/",
+        json={
+            "query": query,
+            "allowed_department_ids": [
+                user.department_id
+            ],
+            "limit": limit,
+        },
+        timeout=60,
     )
+
+    response.raise_for_status()
+
+    data = response.json()
+
+    results = []
+
+    for item in data.get("results", []):
+        document = SimpleNamespace(
+            id=item["document_id"],
+            title=item["document_title"],
+            department_id=item["department_id"],
+        )
+
+        chunk = SimpleNamespace(
+            id=item["chunk_id"],
+            content=item["content"],
+            chunk_index=item["chunk_index"],
+            document_id=item["document_id"],
+            document=document,
+        )
+
+        result = SimpleNamespace(
+            chunk_id=item["chunk_id"],
+            distance=item["distance"],
+            chunk=chunk,
+        )
+
+        results.append(result)
+
     return results
 def keyword_search(query, limit=5, user=None):
+    department_id = get_user_department_id(user)
+
+    if department_id is None:
+        return DocumentChunk.objects.none()
+
     search_query = SearchQuery(
         query,
         config="simple",
     )
+
     results = (
         DocumentChunk.objects
         .select_related("document")
+        .filter(
+            document__department_id=department_id
+        )
         .annotate(
             search_vector=SearchVector(
                 "content",
@@ -71,12 +113,6 @@ def keyword_search(query, limit=5, user=None):
             ),
         )
         .filter(search_vector=search_query)
-        .filter(
-            models.Q(document__is_public=True)
-            | models.Q(
-                document__department_id=user.department_id
-            )
-        )
         .annotate(
             rank=SearchRank(
                 "search_vector",
@@ -85,6 +121,7 @@ def keyword_search(query, limit=5, user=None):
         )
         .order_by("-rank")[:limit]
     )
+
     return results
 def normalize_scores(scores):
     if not scores:

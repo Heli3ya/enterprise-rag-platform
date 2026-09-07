@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from pydantic import BaseModel, Field
 from llm_client import LLMClient
+from db import get_db_connection
 from fastapi.responses import StreamingResponse
 from sentence_transformers import SentenceTransformer, CrossEncoder
 app = FastAPI(
@@ -16,6 +17,10 @@ reranker = CrossEncoder(
 llm_client = LLMClient()
 class EmbeddingRequest(BaseModel):
     texts: list[str] = Field(min_length=1)
+class VectorSearchRequest(BaseModel):
+    query: str = Field(min_length=1)
+    allowed_department_ids: list[int] = Field(min_length=1)
+    limit: int = Field(default=5, ge=1, le=50)
 class RerankRequest(BaseModel):
     query: str
     results: list[str] = Field(min_length=1)
@@ -24,6 +29,26 @@ class LLMRequest(BaseModel):
 @app.get("/health")
 def health_check():
     return {"status": "ok"}
+@app.get("/api/db/test/")
+def test_database_connection():
+    connection = None
+
+    try:
+        connection = get_db_connection()
+
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT 1;")
+            result = cursor.fetchone()
+
+        return {
+            "status": "ok",
+            "database": "connected",
+            "result": result[0],
+        }
+
+    finally:
+        if connection is not None:
+            connection.close()
 @app.post("/api/embed/")
 def generate_embeddings(request: EmbeddingRequest):
     embeddings = model.encode(
@@ -35,6 +60,82 @@ def generate_embeddings(request: EmbeddingRequest):
         "embeddings": embeddings.tolist(),
         "dimension": model.get_embedding_dimension(),
     }
+
+@app.post("/api/vector-search/")
+def vector_search(request: VectorSearchRequest):
+    query_vector = model.encode(
+        request.query,
+        show_progress_bar=False,
+    ).tolist()
+
+    vector_value = (
+        "["
+        + ",".join(
+            str(value)
+            for value in query_vector
+        )
+        + "]"
+    )
+
+    connection = None
+
+    try:
+        connection = get_db_connection()
+
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT
+                    e.chunk_id,
+                    c.content,
+                    c.chunk_index,
+                    d.id AS document_id,
+                    d.title AS document_title,
+                    d.department_id,
+                    e.embedding_vector <=> %s::vector AS distance
+                FROM documents_embedding AS e
+                INNER JOIN documents_documentchunk AS c
+                    ON e.chunk_id = c.id
+                INNER JOIN documents_document AS d
+                    ON c.document_id = d.id
+                WHERE d.department_id = ANY(%s)
+                ORDER BY e.embedding_vector <=> %s::vector
+                LIMIT %s
+                """,
+                (
+                    vector_value,
+                    request.allowed_department_ids,
+                    vector_value,
+                    request.limit,
+                ),
+            )
+
+            rows = cursor.fetchall()
+
+        results = [
+            {
+                "chunk_id": row[0],
+                "content": row[1],
+                "chunk_index": row[2],
+                "document_id": row[3],
+                "document_title": row[4],
+                "department_id": row[5],
+                "distance": float(row[6]),
+            }
+            for row in rows
+        ]
+
+        return {
+            "query": request.query,
+            "allowed_department_ids": (
+                request.allowed_department_ids
+            ),
+            "results": results,
+        }
+
+    finally:
+        if connection is not None:
+            connection.close()
 @app.post("/api/rerank/")
 def rerank_results(request: RerankRequest):
     pairs = [[request.query, result] for result in request.results]
