@@ -1,5 +1,5 @@
 from rest_framework import serializers
-
+from api.models import AuditLog
 
 class SearchQuerySerializer(serializers.Serializer):
     query_text = serializers.CharField(
@@ -26,3 +26,19 @@ class ChatAskSerializer(serializers.Serializer):
         allow_blank=False,
         trim_whitespace=True,
     )
+
+class AuditLogSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = AuditLog
+        fields = [
+            "id",
+            "user",
+            "action",
+            "timestamp",
+        ]
+        read_only_fields = [
+            "id",
+            "user",
+            "action",
+            "timestamp",
+        ]

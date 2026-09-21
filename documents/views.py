@@ -8,9 +8,9 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.exceptions import PermissionDenied
 
+from api.audit import create_audit_log
 from drf_spectacular.utils import extend_schema
-
-from api.permissions import  IsDepartmentMember
+from api.permissions import IsDepartmentMember
 
 from .models import Document
 from .serializers import DocumentSerializer, DocumentStatusSerializer
@@ -41,6 +41,11 @@ class DocumentUploadView(generics.CreateAPIView):
             uploaded_by=self.request.user,
             status="Pending",
             file_type=file_type,
+        )
+
+        create_audit_log(
+            self.request.user,
+            "UPLOAD",
         )
 
         document = serializer.instance
@@ -94,7 +99,7 @@ class DocumentDeleteView(generics.DestroyAPIView):
         document = super().get_object()
 
         if (
-            document.uploaded_by != self.request.user.id
+            document.uploaded_by_id != self.request.user.id
             and self.request.user.role != "Admin"
         ):
             raise PermissionDenied(
@@ -108,3 +113,8 @@ class DocumentDeleteView(generics.DestroyAPIView):
             instance.file_path.delete(save=False)
 
         instance.delete()
+
+        create_audit_log(
+            self.request.user,
+            "DELETE",
+        )

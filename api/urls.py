@@ -1,7 +1,7 @@
 from django.urls import path
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
-from .views import create_embeddings , semantic_search_view , search_query_view , rag_query_view , chat_ask_view 
+from .views import create_embeddings , semantic_search_view , search_query_view , rag_query_view , chat_ask_view ,audit_logs_view
 
 
 urlpatterns = [
@@ -12,4 +12,5 @@ urlpatterns = [
     path("query/search/",search_query_view,name="search_query",),
     path( "query/ask/",rag_query_view,name="rag_query",),
     path( "chat/ask/",chat_ask_view, name="chat_ask",),
+    path("audit-logs/", audit_logs_view, name="audit_logs"),
 ]

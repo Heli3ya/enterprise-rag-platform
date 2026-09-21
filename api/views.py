@@ -1,19 +1,25 @@
 from rest_framework.decorators import api_view
+
+from django.utils.dateparse import parse_date
 from rest_framework.response import Response
 from rest_framework import status
+from api.models import AuditLog
+from api.serializers import AuditLogSerializer
 from rest_framework_simplejwt.views import TokenObtainPairView
 from drf_spectacular.utils import extend_schema, OpenApiResponse
 from documents.models import DocumentChunk, Embedding ,  SearchQuery,QueryResult
 from .services import generate_embeddings , semantic_search , hybrid_search
 from rest_framework.permissions import IsAuthenticated
+from .permissions import IsAdminUser
 from rest_framework.decorators import permission_classes
 from django.db import models , transaction
 import json
+from api.audit import create_audit_log
 from django.http import StreamingHttpResponse
 from .services import generate_rag_answer , generate_rag_stream
 from .serializers import ( SearchQuerySerializer , ChatAskSerializer , )
-
 @api_view(["POST"])
+@permission_classes([IsAdminUser])
 def create_embeddings(request):
     chunk_ids = request.data.get("chunk_ids", [])
 
@@ -227,6 +233,10 @@ def search_query_view(request):
                 for result in results
             ]
         )
+        create_audit_log(
+    request.user,
+    "SEARCH",
+)
     return Response(
         {
             "query_text": query_text,
@@ -279,7 +289,12 @@ def rag_query_view(request):
             {"error": str(exc)},
             status=status.HTTP_502_BAD_GATEWAY,
         )
-
+    
+    create_audit_log(
+    request.user,
+    "RAG_QUERY",
+)
+    
     return Response(
         {
             "query_text": query_text,
@@ -356,4 +371,52 @@ def chat_ask_view(request):
     return StreamingHttpResponse(
         event_stream(),
         content_type="text/event-stream",
+    )
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated, IsAdminUser])
+def audit_logs_view(request):
+    queryset = AuditLog.objects.select_related("user").all()
+
+    user_id = request.query_params.get("user_id")
+    date_from = request.query_params.get("date_from")
+    date_to = request.query_params.get("date_to")
+
+    if user_id:
+        queryset = queryset.filter(user_id=user_id)
+
+    if date_from:
+        parsed_date_from = parse_date(date_from)
+
+        if parsed_date_from is None:
+            return Response(
+                {"error": "Invalid date_from format. Use YYYY-MM-DD."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        queryset = queryset.filter(
+            timestamp__date__gte=parsed_date_from
+        )
+
+    if date_to:
+        parsed_date_to = parse_date(date_to)
+
+        if parsed_date_to is None:
+            return Response(
+                {"error": "Invalid date_to format. Use YYYY-MM-DD."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        queryset = queryset.filter(
+            timestamp__date__lte=parsed_date_to
+        )
+
+    serializer = AuditLogSerializer(
+        queryset,
+        many=True,
+    )
+
+    return Response(
+        serializer.data,
+        status=status.HTTP_200_OK,
     )
