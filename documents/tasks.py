@@ -1,3 +1,4 @@
+import logging
 from celery import shared_task
 from django.db import transaction
 
@@ -9,7 +10,7 @@ from .extractors.pdf import extract_pdf_text
 from .extractors.txt import extract_txt_text
 from .extractors.word import extract_word_text
 
-
+logger = logging.getLogger(__name__)
 EMBEDDING_BATCH_SIZE = 16
 
 
@@ -107,7 +108,10 @@ def process_document(document_id: int):
                 document.status = "Failed"
                 document.save(update_fields=["status"])
             except Exception:
-                pass
+                logger.exception(
+                     "Failed to update document %s status to Failed",
+                     document.id,
+              )
 
         raise
 @shared_task(

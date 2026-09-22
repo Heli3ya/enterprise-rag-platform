@@ -22,7 +22,7 @@ load_dotenv(BASE_DIR / ".env")
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-6$^2j8do1$bqztr^2#ju0$ny__u-av4_r58%5hs^9ecpqmcd@o'
+SECRET_KEY = os.getenv("DJANGO_SECRET_KEY")
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
@@ -42,6 +42,7 @@ INSTALLED_APPS = [
     'departments',
     'accounts',
     'rest_framework',
+    'rest_framework_simplejwt.token_blacklist',
     'api',
     'corsheaders',
     'drf_spectacular',
@@ -90,6 +91,10 @@ DATABASES = {
         'PASSWORD': os.getenv('DB_PASSWORD'),
         'HOST': os.getenv('DB_HOST'),
         'PORT': os.getenv('DB_PORT'),
+
+        'TEST': {
+            'TEMPLATE': 'enterprise_rag_test_template',
+        },
     }
 }
 # Password validation
