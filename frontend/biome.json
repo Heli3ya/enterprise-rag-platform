@@ -1,0 +1,23 @@
+{
+	"files": {
+		"includes": [
+			"app/**",
+			"components/**",
+			"lib/**",
+			"*.json",
+			"*.ts",
+			"*.tsx",
+			"*.mjs"
+		]
+	},
+	"javascript": {
+		"parser": {
+			"unsafeParameterDecoratorsEnabled": false
+		}
+	},
+	"css": {
+		"parser": {
+			"tailwindDirectives": true
+		}
+	}
+}
