@@ -71,3 +71,14 @@ class DocumentStatusSerializer(serializers.ModelSerializer):
             "uploaded_by",
             "created_at",
         ]   
+
+class DocumentListSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Document
+        fields = [
+            "id",
+            "title",
+            "department",
+            "status",
+            "created_at",
+        ]

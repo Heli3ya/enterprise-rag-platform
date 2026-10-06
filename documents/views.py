@@ -1,19 +1,20 @@
 import magic
 
 from django.db import transaction
-
 from rest_framework import generics, status
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.exceptions import PermissionDenied
-
 from api.audit import create_audit_log
 from drf_spectacular.utils import extend_schema
 from api.permissions import IsDepartmentMember
-
 from .models import Document
-from .serializers import DocumentSerializer, DocumentStatusSerializer
+from .serializers import (
+    DocumentSerializer,
+    DocumentStatusSerializer,
+    DocumentListSerializer,
+)
 from .tasks import process_document
 
 
@@ -21,11 +22,23 @@ from .tasks import process_document
     request=DocumentSerializer,
     responses=DocumentSerializer,
 )
-class DocumentUploadView(generics.CreateAPIView):
-    queryset = Document.objects.all()
-    serializer_class = DocumentSerializer
+class DocumentUploadView(generics.ListCreateAPIView):
     permission_classes = [IsDepartmentMember]
     parser_classes = [MultiPartParser, FormParser]
+
+    def get_queryset(self):
+        return (
+            Document.objects
+            .filter(uploaded_by=self.request.user)
+            .select_related("department")
+            .order_by("-created_at")
+        )
+
+    def get_serializer_class(self):
+        if self.request.method == "GET":
+            return DocumentListSerializer
+
+        return DocumentSerializer
 
     def perform_create(self, serializer):
         file = self.request.FILES.get("file_path")
@@ -54,7 +67,7 @@ class DocumentUploadView(generics.CreateAPIView):
             lambda: process_document.delay(document.id)
         )
 
-    def create(self, request, *args, **kwargs):
+    def create(self, request, **args):
         serializer = self.get_serializer(
             data=request.data
         )
