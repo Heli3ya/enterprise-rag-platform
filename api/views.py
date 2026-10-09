@@ -1,5 +1,5 @@
-from rest_framework.decorators import api_view
-
+from rest_framework.decorators import api_view, throttle_classes
+from .throttles import ChatUserRateThrottle
 from django.utils.dateparse import parse_date
 from rest_framework.response import Response
 from rest_framework import status
@@ -312,6 +312,7 @@ def rag_query_view(request):
     },
 )
 @api_view(["POST"])
+@throttle_classes([ChatUserRateThrottle])
 def chat_ask_view(request):
     serializer = ChatAskSerializer(data=request.data)
     serializer.is_valid(raise_exception=True)

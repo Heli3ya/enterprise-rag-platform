@@ -1,14 +1,22 @@
+
 import magic
 
 from django.db import transaction
+from django.utils.decorators import method_decorator
+
+from django_ratelimit.decorators import ratelimit
+
 from rest_framework import generics, status
-from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.exceptions import PermissionDenied, Throttled
 from rest_framework.parsers import MultiPartParser, FormParser
-from rest_framework.exceptions import PermissionDenied
-from api.audit import create_audit_log
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+
 from drf_spectacular.utils import extend_schema
+
+from api.audit import create_audit_log
 from api.permissions import IsDepartmentMember
+
 from .models import Document
 from .serializers import (
     DocumentSerializer,
@@ -67,7 +75,23 @@ class DocumentUploadView(generics.ListCreateAPIView):
             lambda: process_document.delay(document.id)
         )
 
-    def create(self, request, **args):
+    @method_decorator(
+        ratelimit(
+            key="user",
+            rate="10/h",
+            method="POST",
+            block=False,
+        )
+    )
+    def create(self, request, *args, **kwargs):
+        if getattr(request, "limited", False):
+            raise Throttled(
+                detail=(
+                    "Upload rate limit exceeded. "
+                    "Try again later."
+                )
+            )
+
         serializer = self.get_serializer(
             data=request.data
         )
@@ -96,9 +120,13 @@ class DocumentStatusView(generics.RetrieveAPIView):
             id=self.kwargs["pk"]
         )
 
-        if document.department != self.request.user.department:
+        if (
+            document.department
+            != self.request.user.department
+        ):
             raise PermissionDenied(
-                "You do not have permission to access this document."
+                "You do not have permission to access "
+                "this document."
             )
 
         return document
@@ -116,7 +144,8 @@ class DocumentDeleteView(generics.DestroyAPIView):
             and self.request.user.role != "Admin"
         ):
             raise PermissionDenied(
-                "You do not have permission to delete this document."
+                "You do not have permission to delete "
+                "this document."
             )
 
         return document

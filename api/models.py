@@ -31,3 +31,26 @@ class AuditLog(models.Model):
 
     def __str__(self):
         return f"{self.user} - {self.action} - {self.timestamp}"
+    
+
+class RateLimitConfig(models.Model):
+    member_chat_requests_per_hour = models.PositiveIntegerField(
+        default=50,
+        help_text="Maximum chat requests per hour for Members.",
+    )
+    admin_chat_requests_per_hour = models.PositiveIntegerField(
+        default=200,
+        help_text="Maximum chat requests per hour for Admins.",
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Rate Limit Configuration"
+        verbose_name_plural = "Rate Limit Configuration"
+
+    def save(self, *args, **kwargs):
+        self.pk = 1
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return "Chat API Rate Limits"

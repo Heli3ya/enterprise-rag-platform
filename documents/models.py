@@ -1,9 +1,9 @@
 from django.db import models
 from django.conf import settings
-from pgvector.django import VectorField
+from pgvector.django import VectorField, HnswIndex
+from django.contrib.postgres.indexes import GinIndex
+from django.contrib.postgres.search import SearchVector
 from departments.models import Department
-
-
 
 class Document(models.Model):
     STATUS_CHOICES = (
@@ -42,7 +42,6 @@ class Document(models.Model):
     def __str__(self):
         return self.title
 
-
 class DocumentChunk(models.Model):
     document = models.ForeignKey(
         Document,
@@ -53,22 +52,24 @@ class DocumentChunk(models.Model):
     content = models.TextField()
 
     chunk_index = models.PositiveIntegerField()
-class Meta:
-    ordering = ['chunk_index']
 
-    constraints = [
-        models.UniqueConstraint(
-            fields=['document', 'chunk_index'],
-            name='unique_document_chunk_index'
-        )
-    ]
-
-  
+    class Meta:
+        ordering = ['chunk_index']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['document', 'chunk_index'],
+                name='unique_document_chunk_index'
+            )
+        ]
+        indexes = [
+            GinIndex(
+                SearchVector('content', config='simple'),
+                name='documentchunk_content_fts_idx'
+            )
+        ]
 
     def __str__(self):
         return f'{self.document.title} - Chunk {self.chunk_index}'
-
-
 class Embedding(models.Model):
     chunk = models.ForeignKey(
         DocumentChunk,
@@ -81,6 +82,17 @@ class Embedding(models.Model):
     model_name = models.CharField(max_length=100)
 
     created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [
+            HnswIndex(
+                name='embedding_vector_hnsw_idx',
+                fields=['embedding_vector'],
+                m=16,
+                ef_construction=64,
+                opclasses=['vector_cosine_ops'],
+            )
+        ]
 
     def __str__(self):
         return f'{self.chunk} - {self.model_name}'
