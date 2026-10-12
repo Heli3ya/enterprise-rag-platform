@@ -5,9 +5,11 @@ from rest_framework.response import Response
 from rest_framework import status
 from api.models import AuditLog
 from api.serializers import AuditLogSerializer
+from django.db.models import Sum, Count
+from departments.models import Department
 from rest_framework_simplejwt.views import TokenObtainPairView
 from drf_spectacular.utils import extend_schema, OpenApiResponse
-from documents.models import DocumentChunk, Embedding ,  SearchQuery,QueryResult
+from documents.models import Document, DocumentChunk, Embedding, SearchQuery, QueryResult
 from .services import generate_embeddings , semantic_search , hybrid_search
 from rest_framework.permissions import IsAuthenticated
 from .permissions import IsAdminUser
@@ -421,3 +423,112 @@ def audit_logs_view(request):
         serializer.data,
         status=status.HTTP_200_OK,
     )
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated, IsAdminUser])
+def admin_analytics_view(request):
+    # Overall document statistics
+    document_stats = Document.objects.aggregate(
+        total_documents=Count("id"),
+        total_file_size_bytes=Sum("file_size"),
+    )
+
+    # Overall search statistics
+    total_searches = SearchQuery.objects.count()
+
+    # Aggregate document statistics per department
+    department_documents = (
+        Document.objects
+        .values("department_id")
+        .annotate(
+            document_count=Count("id"),
+            file_size_bytes=Sum("file_size"),
+        )
+    )
+
+    document_stats_by_department = {
+        item["department_id"]: item
+        for item in department_documents
+    }
+
+    # Aggregate search statistics per user's current department
+    department_searches = (
+        SearchQuery.objects
+        .filter(user__department_id__isnull=False)
+        .values("user__department_id")
+        .annotate(search_count=Count("id"))
+    )
+
+    search_stats_by_department = {
+        item["user__department_id"]: item["search_count"]
+        for item in department_searches
+    }
+
+    departments_data = []
+
+    for department in Department.objects.all().order_by("name"):
+        document_data = document_stats_by_department.get(
+            department.id,
+            {},
+        )
+
+        departments_data.append({
+            "department_id": department.id,
+            "department_name": department.name,
+            "document_count": document_data.get("document_count", 0),
+            "file_size_bytes": document_data.get("file_size_bytes") or 0,
+            "search_count": search_stats_by_department.get(
+                department.id,
+                0,
+            ),
+        })
+
+    # Return only the 10 most recent searches
+    recent_searches_queryset = (
+        SearchQuery.objects
+        .select_related("user", "user__department")
+        .order_by("-created_at", "-id")[:10]
+    )
+
+    recent_searches = [
+        {
+            "id": search.id,
+            "username": search.user.username,
+            "department_name": (
+                search.user.department.name
+                if search.user.department
+                else None
+            ),
+            "query_text": search.query_text,
+            "created_at": search.created_at,
+        }
+        for search in recent_searches_queryset
+    ]
+
+    return Response(
+        {
+            "total_documents": document_stats["total_documents"],
+            "total_file_size_bytes": (
+                document_stats["total_file_size_bytes"] or 0
+            ),
+            "total_searches": total_searches,
+            "departments": departments_data,
+            "recent_searches": recent_searches,
+        },
+        status=status.HTTP_200_OK,
+    )
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def current_user_view(request):
+    user = request.user
+
+    return Response({
+        "id": user.id,
+        "username": user.username,
+        "role": user.role,
+        "department_id": user.department_id,
+        "department_name": (
+            user.department.name if user.department else None
+        ),
+    })

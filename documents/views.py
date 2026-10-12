@@ -62,6 +62,7 @@ class DocumentUploadView(generics.ListCreateAPIView):
             uploaded_by=self.request.user,
             status="Pending",
             file_type=file_type,
+            file_size=file.size,
         )
 
         create_audit_log(

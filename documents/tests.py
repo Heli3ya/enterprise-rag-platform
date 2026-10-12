@@ -254,3 +254,38 @@ class DocumentEndpointTest(TestCase):
             response.status_code,
             400
         )
+    def test_upload_document_saves_file_size(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        content = b"Analytics file size test"
+
+        uploaded_file = SimpleUploadedFile(
+            "analytics_size_test.txt",
+            content,
+            content_type="text/plain",
+        )
+
+        response = self.client.post(
+            "/api/documents/",
+            {
+                "title": "Analytics Size Test",
+                "department": self.department.id,
+                "file_path": uploaded_file,
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            201,
+            response.data,
+        )
+
+        document = Document.objects.get(
+            id=response.data["document_id"],
+        )
+
+        self.assertEqual(
+            document.file_size,
+            len(content),
+        )

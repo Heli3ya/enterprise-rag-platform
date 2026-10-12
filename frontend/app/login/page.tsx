@@ -17,29 +17,38 @@ export default function LoginPage() {
 
 	const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
 		event.preventDefault();
-
 		setError("");
 		setLoading(true);
 
 		try {
-			const response = await api.post("/auth/login/", {
+			const loginResponse = await api.post("/auth/login/", {
 				username,
 				password,
 			});
 
-			const { access, refresh } = response.data;
+			localStorage.setItem("access_token", loginResponse.data.access);
+			localStorage.setItem("refresh_token", loginResponse.data.refresh);
 
-			localStorage.setItem("access_token", access);
-			localStorage.setItem("refresh_token", refresh);
+			const profileResponse = await api.get("/auth/me/");
+			const profile = profileResponse.data;
 
-			setUser({
-				username,
-			});
+			if (profile.role !== "Admin" && profile.role !== "Member") {
+				throw new Error("The user role returned by the server is invalid.");
+			}
 
-			router.push("/");
-		} catch (error) {
-			console.error("Login failed:", error);
-			setError("Username or password is incorrect.");
+			setUser(profile);
+
+			router.replace(profile.role === "Admin" ? "/admin" : "/");
+		} catch (err) {
+			console.error("Login failed:", err);
+
+			localStorage.removeItem("access_token");
+			localStorage.removeItem("refresh_token");
+			localStorage.removeItem("user");
+
+			setError(
+				"Login failed. Please check your username and password, then try again.",
+			);
 		} finally {
 			setLoading(false);
 		}
@@ -62,10 +71,10 @@ export default function LoginPage() {
 						>
 							Username
 						</label>
-
 						<input
 							id="username"
 							type="text"
+							autoComplete="username"
 							value={username}
 							onChange={(event) => setUsername(event.target.value)}
 							required
@@ -80,10 +89,10 @@ export default function LoginPage() {
 						>
 							Password
 						</label>
-
 						<input
 							id="password"
 							type="password"
+							autoComplete="current-password"
 							value={password}
 							onChange={(event) => setPassword(event.target.value)}
 							required

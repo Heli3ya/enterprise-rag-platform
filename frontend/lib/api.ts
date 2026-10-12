@@ -2,9 +2,6 @@ import axios, { type AxiosError, type InternalAxiosRequestConfig } from "axios";
 
 const api = axios.create({
 	baseURL: process.env.NEXT_PUBLIC_API_BASE_URL,
-	headers: {
-		"Content-Type": "application/json",
-	},
 });
 
 let refreshPromise: Promise<string | null> | null = null;
@@ -43,7 +40,7 @@ async function refreshAccessToken(): Promise<string | null> {
 
 				return newAccessToken;
 			})
-			.catch((error) => {
+			.catch((error: unknown) => {
 				console.error("Token refresh failed:", error);
 
 				localStorage.removeItem("access_token");
@@ -83,7 +80,7 @@ api.interceptors.request.use(
 
 		return config;
 	},
-	(error) => Promise.reject(error),
+	(error: unknown) => Promise.reject(error),
 );
 
 api.interceptors.response.use(
