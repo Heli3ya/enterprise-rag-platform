@@ -140,41 +140,54 @@ def normalize_scores(scores):
 def rerank_results(query, results):
     if not results:
         return []
+
+    max_content_length = 500
+
+    rerank_contents = [
+        result["content"][:max_content_length]
+        for result in results
+    ]
+
     response = requests.post(
         f"{settings.AI_SERVICE_URL}/api/rerank/",
         json={
             "query": query,
-            "results": [
-                result["content"]
-                for result in results
-            ],
+            "results": rerank_contents,
         },
         timeout=60,
     )
     response.raise_for_status()
+
     reranked_data = response.json()
+
     score_by_content = {
         item["content"]: float(item["score"])
         for item in reranked_data["results"]
     }
+
     reranked_results = []
+
     for result in results:
+        rerank_content = result["content"][:max_content_length]
+
         rerank_score = score_by_content.get(
-            result["content"],
+            rerank_content,
             float("-inf"),
         )
+
         reranked_results.append(
             {
                 **result,
                 "rerank_score": rerank_score,
             }
         )
+
     reranked_results.sort(
         key=lambda item: item["rerank_score"],
         reverse=True,
     )
-    return reranked_results
 
+    return reranked_results
 def hybrid_search(query, limit=5, user=None):
     initial_limit = limit * 3
 
@@ -249,9 +262,10 @@ def hybrid_search(query, limit=5, user=None):
         key=lambda item: item["score"],
         reverse=True,
     )
+    rerank_candidates = fused_results[:5]
     reranked_results = rerank_results(
         query,
-        fused_results,
+        rerank_candidates,
     )
     return reranked_results[:limit]
 
