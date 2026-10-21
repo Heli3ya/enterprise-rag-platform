@@ -1,11 +1,21 @@
+
 import json
+import os
+
 import requests
 
 
 class LLMClient:
     def __init__(self):
-        self.base_url = "http://localhost:11434/api"
-        self.model = "qwen2.5:3b"
+        self.base_url = os.getenv(
+            "LLM_BASE_URL",
+            "http://localhost:11434/api",
+        ).rstrip("/")
+
+        self.model = os.getenv(
+            "LLM_MODEL",
+            "qwen2.5:3b",
+        )
 
     def generate(self, prompt: str) -> str:
         try:
