@@ -1,15 +1,38 @@
 
-# Create your views here.
-from rest_framework.generics import ListAPIView , CreateAPIView
-from .models import Department
-from .serializers import DepartmentSerializer  
-from api.permissions import IsAdminUser
+from rest_framework import generics
+from rest_framework.exceptions import PermissionDenied
+from rest_framework.permissions import IsAuthenticated
 
-class DepartmentListView(ListAPIView):
-    queryset = Department.objects.all()
+from api.permissions import IsAdminUser
+from .models import Department
+from .serializers import DepartmentSerializer
+
+
+class DepartmentListView(generics.ListAPIView):
     serializer_class = DepartmentSerializer
-    
-class DepartmentCreateView(CreateAPIView):
-    queryset = Department.objects.all()
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        tenant_id = self.request.user.tenant_id
+
+        if tenant_id is None:
+            return Department.objects.none()
+
+        return Department.objects.filter(
+            tenant_id=tenant_id
+        ).order_by("name")
+
+
+class DepartmentCreateView(generics.CreateAPIView):
     serializer_class = DepartmentSerializer
     permission_classes = [IsAdminUser]
+
+    def perform_create(self, serializer):
+        user = self.request.user
+
+        if user.tenant_id is None:
+            raise PermissionDenied(
+                "Your account is not assigned to an organization."
+            )
+
+        serializer.save(tenant_id=user.tenant_id)

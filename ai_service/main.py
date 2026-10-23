@@ -50,6 +50,7 @@ class EmbeddingRequest(BaseModel):
 
 class VectorSearchRequest(BaseModel):
     query: str = Field(min_length=1)
+    tenant_id: int = Field(gt=0)
     allowed_department_ids: list[int] = Field(min_length=1)
     limit: int = Field(default=5, ge=1, le=50)
 
@@ -157,12 +158,14 @@ def vector_search(request: VectorSearchRequest):
                     ON e.chunk_id = c.id
                 INNER JOIN documents_document AS d
                     ON c.document_id = d.id
-                WHERE d.department_id = ANY(%s)
+                WHERE d.tenant_id = %s
+                  AND d.department_id = ANY(%s)
                 ORDER BY e.embedding_vector <=> %s::vector
                 LIMIT %s
                 """,
                 (
                     vector_value,
+                    request.tenant_id,
                     request.allowed_department_ids,
                     vector_value,
                     request.limit,
@@ -186,6 +189,7 @@ def vector_search(request: VectorSearchRequest):
 
         return {
             "query": request.query,
+            "tenant_id": request.tenant_id,
             "allowed_department_ids": request.allowed_department_ids,
             "results": results,
         }

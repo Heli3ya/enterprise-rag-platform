@@ -1,11 +1,9 @@
-
 from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
 from rest_framework.test import APIClient
 
-from api.services import build_rag_prompt
 from tests.factories import AdminFactory, DocumentChunkFactory
 
 
@@ -15,6 +13,11 @@ def admin_client(db):
     client = APIClient()
     client.force_authenticate(user=user)
     return client
+
+
+def make_chunk_for_admin(admin_client):
+    user = admin_client.handler._force_user
+    return DocumentChunkFactory(document__uploaded_by=user)
 
 
 @pytest.mark.django_db
@@ -43,7 +46,7 @@ def test_create_embeddings_returns_404_when_no_chunks_exist(admin_client):
 
 @pytest.mark.django_db
 def test_create_embeddings_returns_502_when_ai_service_fails(admin_client):
-    chunk = DocumentChunkFactory()
+    chunk = make_chunk_for_admin(admin_client)
 
     with patch(
         "api.views.generate_embeddings",
@@ -56,14 +59,14 @@ def test_create_embeddings_returns_502_when_ai_service_fails(admin_client):
         )
 
     assert response.status_code == 502
-    assert response.json()["error"] == "AI service unavailable"
+    assert response.json()["error"] == "Failed to generate embeddings."
 
 
 @pytest.mark.django_db
 def test_create_embeddings_saves_embeddings_successfully(admin_client):
     from documents.models import Embedding
 
-    chunk = DocumentChunkFactory()
+    chunk = make_chunk_for_admin(admin_client)
 
     with patch(
         "api.views.generate_embeddings",
@@ -124,16 +127,24 @@ def test_semantic_search_returns_502_when_search_fails(admin_client):
     assert response.json()["error"] == "Search service unavailable"
 
 
+
+@pytest.mark.django_db
 def test_semantic_search_returns_results_from_chunk_object(admin_client):
+    chunk = DocumentChunkFactory(
+        document__uploaded_by=admin_client.handler._force_user,
+        document__is_public=True,
+        chunk_index=3,
+    )
+
     result = {
         "result": SimpleNamespace(
             chunk=SimpleNamespace(
-                document_id=21,
-                document=SimpleNamespace(title="Leave policy"),
+                document_id=chunk.document_id,
+                document=SimpleNamespace(title=chunk.document.title),
                 chunk_index=3,
             )
         ),
-        "chunk_id": 42,
+        "chunk_id": chunk.id,
         "score": 0.87654321,
         "content": "Annual leave requires approval.",
     }
@@ -150,9 +161,9 @@ def test_semantic_search_returns_results_from_chunk_object(admin_client):
         "query": "annual leave",
         "results": [
             {
-                "document_id": 21,
-                "document_title": "Leave policy",
-                "chunk_id": 42,
+                "document_id": chunk.document_id,
+                "document_title": chunk.document.title,
+                "chunk_id": chunk.id,
                 "chunk_index": 3,
                 "score": 0.876543,
                 "content": "Annual leave requires approval.",
@@ -162,14 +173,23 @@ def test_semantic_search_returns_results_from_chunk_object(admin_client):
     search.assert_called_once_with("annual leave", limit=5)
 
 
-def test_semantic_search_returns_results_from_direct_chunk_object(admin_client):
+@pytest.mark.django_db
+def test_semantic_search_returns_results_from_direct_chunk_object(
+    admin_client,
+):
+    chunk = DocumentChunkFactory(
+        document__uploaded_by=admin_client.handler._force_user,
+        document__is_public=True,
+        chunk_index=2,
+    )
+
     result = {
         "result": SimpleNamespace(
-            document_id=31,
-            document=SimpleNamespace(title="Remote work policy"),
+            document_id=chunk.document_id,
+            document=SimpleNamespace(title=chunk.document.title),
             chunk_index=2,
         ),
-        "chunk_id": 51,
+        "chunk_id": chunk.id,
         "score": 0.5,
         "content": "Remote work requires approval.",
     }
@@ -183,13 +203,11 @@ def test_semantic_search_returns_results_from_direct_chunk_object(admin_client):
 
     assert response.status_code == 200
     item = response.json()["results"][0]
-    assert item["document_id"] == 31
-    assert item["document_title"] == "Remote work policy"
-    assert item["chunk_id"] == 51
+    assert item["document_id"] == chunk.document_id
+    assert item["document_title"] == chunk.document.title
+    assert item["chunk_id"] == chunk.id
     assert item["chunk_index"] == 2
     assert item["score"] == 0.5
-
-from types import SimpleNamespace
 
 
 @pytest.mark.django_db
@@ -212,7 +230,7 @@ def test_search_query_returns_502_when_search_fails(admin_client):
 def test_search_query_saves_valid_results(admin_client):
     from documents.models import QueryResult, SearchQuery
 
-    chunk = DocumentChunkFactory()
+    chunk = make_chunk_for_admin(admin_client)
     chunk.document.is_public = True
     chunk.document.save(update_fields=["is_public"])
 
@@ -260,10 +278,12 @@ def test_search_query_saves_valid_results(admin_client):
 
 
 @pytest.mark.django_db
-def test_search_query_filters_results_with_nonpositive_rerank_score(admin_client):
-    from documents.models import SearchQuery, QueryResult
+def test_search_query_filters_results_with_nonpositive_rerank_score(
+    admin_client,
+):
+    from documents.models import QueryResult, SearchQuery
 
-    chunk = DocumentChunkFactory()
+    chunk = make_chunk_for_admin(admin_client)
     chunk.document.is_public = True
     chunk.document.save(update_fields=["is_public"])
 
@@ -348,6 +368,7 @@ def test_rag_query_returns_answer_and_citations(admin_client):
     generate_answer.assert_called_once()
     audit.assert_called_once()
 
+
 @pytest.mark.django_db
 def test_chat_ask_streams_tokens_citations_and_done(admin_client):
     citations = [
@@ -365,7 +386,10 @@ def test_chat_ask_streams_tokens_citations_and_done(admin_client):
         {"type": "done"},
     ]
 
-    with patch("api.views.generate_rag_stream", return_value=iter(events)) as stream:
+    with patch(
+        "api.views.generate_rag_stream",
+        return_value=iter(events),
+    ) as stream:
         response = admin_client.post(
             "/api/chat/ask/",
             {
@@ -374,7 +398,9 @@ def test_chat_ask_streams_tokens_citations_and_done(admin_client):
             },
             format="json",
         )
-        response_content = b"".join(response.streaming_content).decode("utf-8")
+        response_content = b"".join(
+            response.streaming_content
+        ).decode("utf-8")
 
     assert response.status_code == 200
     assert response["Content-Type"].startswith("text/event-stream")
@@ -394,7 +420,10 @@ def test_chat_ask_streams_error_event(admin_client):
         }
     ]
 
-    with patch("api.views.generate_rag_stream", return_value=iter(events)):
+    with patch(
+        "api.views.generate_rag_stream",
+        return_value=iter(events),
+    ):
         response = admin_client.post(
             "/api/chat/ask/",
             {
@@ -403,7 +432,9 @@ def test_chat_ask_streams_error_event(admin_client):
             },
             format="json",
         )
-        response_content = b"".join(response.streaming_content).decode("utf-8")
+        response_content = b"".join(
+            response.streaming_content
+        ).decode("utf-8")
 
     assert response.status_code == 200
     assert "event: error" in response_content
@@ -416,7 +447,10 @@ def test_chat_ask_streams_error_when_generator_raises(admin_client):
         raise RuntimeError("Simulated streaming failure")
         yield
 
-    with patch("api.views.generate_rag_stream", side_effect=failing_stream):
+    with patch(
+        "api.views.generate_rag_stream",
+        side_effect=failing_stream,
+    ):
         response = admin_client.post(
             "/api/chat/ask/",
             {
@@ -425,7 +459,9 @@ def test_chat_ask_streams_error_when_generator_raises(admin_client):
             },
             format="json",
         )
-        response_content = b"".join(response.streaming_content).decode("utf-8")
+        response_content = b"".join(
+            response.streaming_content
+        ).decode("utf-8")
 
     assert response.status_code == 200
     assert "event: error" in response_content
@@ -437,7 +473,11 @@ def test_audit_logs_returns_logs_for_admin(admin_client):
     from api.models import AuditLog
 
     user = admin_client.handler._force_user
-    AuditLog.objects.create(user=user, action="SEARCH")
+    AuditLog.objects.create(
+        tenant=user.tenant,
+        user=user,
+        action="SEARCH",
+    )
 
     response = admin_client.get("/api/audit-logs/")
 
@@ -452,10 +492,21 @@ def test_audit_logs_filters_by_user_id(admin_client):
     from tests.factories import UserFactory
 
     first_user = admin_client.handler._force_user
-    second_user = UserFactory()
+    second_user = UserFactory(
+        tenant=first_user.tenant,
+        department=first_user.department,
+    )
 
-    AuditLog.objects.create(user=first_user, action="SEARCH")
-    AuditLog.objects.create(user=second_user, action="UPLOAD")
+    AuditLog.objects.create(
+        tenant=first_user.tenant,
+        user=first_user,
+        action="SEARCH",
+    )
+    AuditLog.objects.create(
+        tenant=first_user.tenant,
+        user=second_user,
+        action="UPLOAD",
+    )
 
     response = admin_client.get(
         "/api/audit-logs/",
@@ -477,8 +528,16 @@ def test_audit_logs_filters_by_date_range(admin_client):
     user = admin_client.handler._force_user
     now = timezone.now()
 
-    old_log = AuditLog.objects.create(user=user, action="OLD")
-    current_log = AuditLog.objects.create(user=user, action="CURRENT")
+    old_log = AuditLog.objects.create(
+        tenant=user.tenant,
+        user=user,
+        action="OLD",
+    )
+    current_log = AuditLog.objects.create(
+        tenant=user.tenant,
+        user=user,
+        action="CURRENT",
+    )
 
     AuditLog.objects.filter(pk=old_log.pk).update(
         timestamp=now - timedelta(days=10)

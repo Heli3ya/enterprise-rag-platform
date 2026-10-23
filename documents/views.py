@@ -3,7 +3,6 @@ import magic
 
 from django.db import transaction
 from django.utils.decorators import method_decorator
-
 from django_ratelimit.decorators import ratelimit
 
 from rest_framework import generics, status
@@ -35,9 +34,14 @@ class DocumentUploadView(generics.ListCreateAPIView):
     parser_classes = [MultiPartParser, FormParser]
 
     def get_queryset(self):
+        user = self.request.user
+
+        if user.tenant_id is None:
+            return Document.objects.none()
+
         return (
             Document.objects
-            .filter(uploaded_by=self.request.user)
+            .filter(tenant_id=user.tenant_id)
             .select_related("department")
             .order_by("-created_at")
         )
@@ -45,32 +49,40 @@ class DocumentUploadView(generics.ListCreateAPIView):
     def get_serializer_class(self):
         if self.request.method == "GET":
             return DocumentListSerializer
-
         return DocumentSerializer
 
     def perform_create(self, serializer):
+        user = self.request.user
+        department = serializer.validated_data["department"]
         file = self.request.FILES.get("file_path")
 
-        file_type = magic.from_buffer(
-            file.read(2048),
-            mime=True,
-        )
+        if user.tenant_id is None:
+            raise PermissionDenied(
+                "Your account is not assigned to an organization."
+            )
 
+        if department.tenant_id != user.tenant_id:
+            raise PermissionDenied(
+                "You cannot upload documents to another organization."
+            )
+
+        if user.department_id != department.id and user.role != "Admin":
+            raise PermissionDenied(
+                "You cannot upload documents to this department."
+            )
+
+        file_type = magic.from_buffer(file.read(2048), mime=True)
         file.seek(0)
 
-        serializer.save(
-            uploaded_by=self.request.user,
+        document = serializer.save(
+            tenant_id=user.tenant_id,
+            uploaded_by=user,
             status="Pending",
             file_type=file_type,
             file_size=file.size,
         )
 
-        create_audit_log(
-            self.request.user,
-            "UPLOAD",
-        )
-
-        document = serializer.instance
+        create_audit_log(user, "UPLOAD")
 
         transaction.on_commit(
             lambda: process_document.delay(document.id)
@@ -87,20 +99,11 @@ class DocumentUploadView(generics.ListCreateAPIView):
     def create(self, request, *args, **kwargs):
         if getattr(request, "limited", False):
             raise Throttled(
-                detail=(
-                    "Upload rate limit exceeded. "
-                    "Try again later."
-                )
+                detail="Upload rate limit exceeded. Try again later."
             )
 
-        serializer = self.get_serializer(
-            data=request.data
-        )
-
-        serializer.is_valid(
-            raise_exception=True
-        )
-
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
         self.perform_create(serializer)
 
         return Response(
@@ -116,37 +119,55 @@ class DocumentStatusView(generics.RetrieveAPIView):
     serializer_class = DocumentStatusSerializer
     permission_classes = [IsAuthenticated]
 
+    def get_queryset(self):
+        user = self.request.user
+
+        if user.tenant_id is None:
+            return Document.objects.none()
+
+        return Document.objects.filter(
+            tenant_id=user.tenant_id
+        ).select_related("department")
+
     def get_object(self):
-        document = Document.objects.get(
-            id=self.kwargs["pk"]
-        )
+        document = super().get_object()
+        user = self.request.user
 
         if (
-            document.department
-            != self.request.user.department
+            user.role != "Admin"
+            and document.department_id != user.department_id
         ):
             raise PermissionDenied(
-                "You do not have permission to access "
-                "this document."
+                "You do not have permission to access this document."
             )
 
         return document
 
 
 class DocumentDeleteView(generics.DestroyAPIView):
-    queryset = Document.objects.all()
+    serializer_class = DocumentSerializer
     permission_classes = [IsDepartmentMember]
+
+    def get_queryset(self):
+        user = self.request.user
+
+        if user.tenant_id is None:
+            return Document.objects.none()
+
+        return Document.objects.filter(
+            tenant_id=user.tenant_id
+        )
 
     def get_object(self):
         document = super().get_object()
+        user = self.request.user
 
         if (
-            document.uploaded_by_id != self.request.user.id
-            and self.request.user.role != "Admin"
+            document.uploaded_by_id != user.id
+            and user.role != "Admin"
         ):
             raise PermissionDenied(
-                "You do not have permission to delete "
-                "this document."
+                "You do not have permission to delete this document."
             )
 
         return document
@@ -156,8 +177,4 @@ class DocumentDeleteView(generics.DestroyAPIView):
             instance.file_path.delete(save=False)
 
         instance.delete()
-
-        create_audit_log(
-            self.request.user,
-            "DELETE",
-        )
+        create_audit_log(self.request.user, "DELETE")

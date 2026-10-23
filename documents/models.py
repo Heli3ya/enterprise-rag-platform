@@ -1,4 +1,3 @@
-
 from django.db import models
 from django.conf import settings
 from pgvector.django import VectorField, HnswIndex
@@ -7,7 +6,37 @@ from django.contrib.postgres.search import SearchVector
 from departments.models import Department
 
 
+def tenant_document_upload_to(instance, filename):
+    """
+    Store each document inside its tenant-specific directory.
+    """
+
+    if instance.tenant_id is None:
+        raise ValueError(
+            "Cannot store a document without an assigned tenant."
+        )
+
+    # Keep only the filename, not any user-supplied directory path.
+    safe_filename = filename.replace("\\", "/").rsplit("/", 1)[-1]
+
+    if not safe_filename:
+        raise ValueError("Invalid document filename.")
+
+    return (
+        f"documents/tenant_{instance.tenant_id}/"
+        f"{safe_filename}"
+    )
+
+
 class Document(models.Model):
+    tenant = models.ForeignKey(
+        "tenants.Tenant",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="documents",
+    )
+
     STATUS_CHOICES = (
         ("Pending", "Pending"),
         ("Processing", "Processing"),
@@ -17,7 +46,9 @@ class Document(models.Model):
 
     title = models.CharField(max_length=255)
     file_size = models.PositiveBigIntegerField(default=0)
-    file_path = models.FileField(upload_to="documents/")
+    file_path = models.FileField(
+        upload_to=tenant_document_upload_to
+    )
     file_type = models.CharField(max_length=20)
 
     status = models.CharField(
@@ -99,6 +130,14 @@ class Embedding(models.Model):
 
 
 class SearchQuery(models.Model):
+    tenant = models.ForeignKey(
+        "tenants.Tenant",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="search_queries",
+    )
+
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,

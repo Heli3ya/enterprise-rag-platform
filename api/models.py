@@ -1,8 +1,17 @@
+
 from django.conf import settings
 from django.db import models
 
 
 class AuditLog(models.Model):
+    tenant = models.ForeignKey(
+        "tenants.Tenant",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="audit_logs",
+    )
+
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -31,7 +40,7 @@ class AuditLog(models.Model):
 
     def __str__(self):
         return f"{self.user} - {self.action} - {self.timestamp}"
-    
+
 
 class RateLimitConfig(models.Model):
     member_chat_requests_per_hour = models.PositiveIntegerField(
