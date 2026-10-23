@@ -28,3 +28,9 @@ frontend/.env.local
 # Test coverage
 .coverage
 htmlcov/
+# Temporary review and recovery files
+*.bak
+*.tmp
+api_views_diff_review.txt
+ervices.py .apiservices_tenant_backup.py
+api/services_tenant_backup.py

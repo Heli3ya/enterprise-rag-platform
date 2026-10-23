@@ -1,37 +1,157 @@
-from rest_framework.decorators import api_view, throttle_classes
-from .throttles import ChatUserRateThrottle
+﻿
+import json
+
+from django.db import models, transaction
+from django.db.models import Sum, Count
+from django.http import StreamingHttpResponse
 from django.utils.dateparse import parse_date
-from rest_framework.response import Response
+
 from rest_framework import status
+from rest_framework.decorators import (
+    api_view,
+    throttle_classes,
+    permission_classes,
+)
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+
+from drf_spectacular.utils import extend_schema, OpenApiResponse
+
+from .throttles import ChatUserRateThrottle
+from .permissions import IsAdminUser
+from .services import (
+    generate_embeddings,
+    hybrid_search,
+    generate_rag_answer,
+    generate_rag_stream,
+)
+from .serializers import SearchQuerySerializer, ChatAskSerializer
+from .audit import create_audit_log
+
 from api.models import AuditLog
 from api.serializers import AuditLogSerializer
-from django.db.models import Sum, Count
 from departments.models import Department
-from rest_framework_simplejwt.views import TokenObtainPairView
-from drf_spectacular.utils import extend_schema, OpenApiResponse
-from documents.models import Document, DocumentChunk, Embedding, SearchQuery, QueryResult
-from .services import generate_embeddings , semantic_search , hybrid_search
-from rest_framework.permissions import IsAuthenticated
-from .permissions import IsAdminUser
-from rest_framework.decorators import permission_classes
-from django.db import models , transaction
-import json
-from api.audit import create_audit_log
-from django.http import StreamingHttpResponse
-from .services import generate_rag_answer , generate_rag_stream
-from .serializers import ( SearchQuerySerializer , ChatAskSerializer , )
-@api_view(["POST"])
-@permission_classes([IsAdminUser])
-def create_embeddings(request):
-    chunk_ids = request.data.get("chunk_ids", [])
+from documents.models import (
+    Document,
+    DocumentChunk,
+    Embedding,
+    SearchQuery,
+    QueryResult,
+)
+
+
+def _get_tenant_id(request):
+    """Return the authenticated user's tenant ID."""
+    return getattr(request.user, "tenant_id", None)
+
+
+def _tenant_required_response(request):
+    """Reject requests from users without a tenant."""
+    tenant_id = _get_tenant_id(request)
+
+    if tenant_id is None:
+        return Response(
+            {
+                "detail": (
+                    "Your account is not assigned to an organization."
+                )
+            },
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    tenant = getattr(request.user, "tenant", None)
+
+    if tenant is None or not tenant.is_active:
+        return Response(
+            {"detail": "Your organization is inactive or unavailable."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    return None
+
+
+def _filter_tenant_search_results(results, request):
+    """
+    Return only search results whose chunks belong to the user's tenant.
+
+    Never trust the search service's result objects alone for access control.
+    Verify chunk ownership against the database before returning results.
+    """
+    tenant_id = _get_tenant_id(request)
+
+    if tenant_id is None:
+        return []
+
+    chunk_ids = [
+        result.get("chunk_id")
+        for result in results
+        if isinstance(result, dict) and result.get("chunk_id") is not None
+    ]
 
     if not chunk_ids:
+        return []
+
+    allowed_chunk_ids = set(
+        DocumentChunk.objects.filter(
+            id__in=chunk_ids,
+            document__tenant_id=tenant_id,
+            document__department__tenant_id=tenant_id,
+        )
+        .filter(
+            models.Q(document__is_public=True)
+            | models.Q(
+                document__department_id=request.user.department_id
+            )
+        )
+        .values_list("id", flat=True)
+    )
+
+    return [
+        result
+        for result in results
+        if (
+            isinstance(result, dict)
+            and result.get("chunk_id") in allowed_chunk_ids
+        )
+    ]
+
+
+def _get_result_document(result):
+    """Support search results containing either a chunk or a direct object."""
+    item = result["result"]
+
+    if hasattr(item, "chunk"):
+        return item.chunk
+
+    return item
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated, IsAdminUser])
+def create_embeddings(request):
+    tenant_error = _tenant_required_response(request)
+    if tenant_error:
+        return tenant_error
+
+    chunk_ids = request.data.get("chunk_ids", [])
+
+    if not isinstance(chunk_ids, list) or not chunk_ids:
         return Response(
             {"error": "chunk_ids is required."},
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    chunks = DocumentChunk.objects.filter(id__in=chunk_ids)
+    tenant_id = _get_tenant_id(request)
+
+    chunks = (
+        DocumentChunk.objects.filter(
+            id__in=chunk_ids,
+            document__tenant_id=tenant_id,
+            document__department__tenant_id=tenant_id,
+        )
+        .select_related("document", "document__department")
+        .distinct()
+    )
 
     if not chunks.exists():
         return Response(
@@ -43,28 +163,29 @@ def create_embeddings(request):
 
     try:
         embeddings, dimension = generate_embeddings(texts)
-    except Exception as exc:
+    except Exception:
         return Response(
-            {"error": str(exc)},
+            {"error": "Failed to generate embeddings."},
             status=status.HTTP_502_BAD_GATEWAY,
         )
 
     created_embeddings = []
 
-    for chunk, vector in zip(chunks, embeddings):
-        embedding = Embedding.objects.create(
-            chunk=chunk,
-            embedding_vector=vector,
-            model_name="intfloat/multilingual-e5-small",
-        )
+    with transaction.atomic():
+        for chunk, vector in zip(chunks, embeddings):
+            embedding = Embedding.objects.create(
+                chunk=chunk,
+                embedding_vector=vector,
+                model_name="intfloat/multilingual-e5-small",
+            )
 
-        created_embeddings.append(
-            {
-                "id": embedding.id,
-                "chunk_id": chunk.id,
-                "dimension": dimension,
-            }
-        )
+            created_embeddings.append(
+                {
+                    "id": embedding.id,
+                    "chunk_id": chunk.id,
+                    "dimension": dimension,
+                }
+            )
 
     return Response(
         {
@@ -73,52 +194,24 @@ def create_embeddings(request):
         },
         status=status.HTTP_201_CREATED,
     )
- 
-@extend_schema(
-    request={
-        "application/json": {
-            "type": "object",
-            "properties": {
-                "query": {
-                    "type": "string",
-                    "example": "شرایط مرخصی استعلاجی",
-                }
-            },
-            "required": ["query"],
-        }
-    },
-    responses={
-        200: {
-            "type": "object",
-            "properties": {
-                "query": {"type": "string"},
-                "results": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "document_id": {"type": "integer"},
-                            "document_title": {"type": "string"},
-                            "chunk_id": {"type": "integer"},
-                            "chunk_index": {"type": "integer"},
-                            "distance": {"type": "number"},
-                            "content": {"type": "string"},
-                        },
-                    },
-                },
-            },
-        }
-    },
-)
-
-
-
-
 
 
 @api_view(["POST"])
+@permission_classes([IsAuthenticated])
 def semantic_search_view(request):
-    query = request.data.get("query", "").strip()
+    tenant_error = _tenant_required_response(request)
+    if tenant_error:
+        return tenant_error
+
+    query = request.data.get("query", "")
+
+    if not isinstance(query, str):
+        return Response(
+            {"error": "query is required."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    query = query.strip()
 
     if not query:
         return Response(
@@ -127,52 +220,52 @@ def semantic_search_view(request):
         )
 
     try:
+        # Database ownership is verified below before any result is returned.
         results = hybrid_search(query, limit=5)
     except Exception as exc:
         return Response(
-            {"error": str(exc)},
+            {"error": str(exc) or "Search service unavailable"},
             status=status.HTTP_502_BAD_GATEWAY,
         )
 
-    return Response(
-    {
-        "query": query,
-        "results": [
+    results = _filter_tenant_search_results(results, request)
+
+    response_results = []
+
+    for result in results:
+        item = _get_result_document(result)
+
+        response_results.append(
             {
-                "document_id": (
-                    result["result"].chunk.document_id
-                    if hasattr(result["result"], "chunk")
-                    else result["result"].document_id
-                ),
-                "document_title": (
-                    result["result"].chunk.document.title
-                    if hasattr(result["result"], "chunk")
-                    else result["result"].document.title
-                ),
+                "document_id": item.document_id,
+                "document_title": item.document.title,
                 "chunk_id": result["chunk_id"],
-                "chunk_index": (
-                    result["result"].chunk.chunk_index
-                    if hasattr(result["result"], "chunk")
-                    else result["result"].chunk_index
-                ),
+                "chunk_index": item.chunk_index,
                 "score": round(float(result["score"]), 6),
                 "content": result["content"],
             }
-            for result in results
-        ],
-    },
-    status=status.HTTP_200_OK,
-)
+        )
+
+    return Response(
+        {
+            "query": query,
+            "results": response_results,
+        },
+        status=status.HTTP_200_OK,
+    )
+
 
 @extend_schema(
     request=SearchQuerySerializer,
-    responses=OpenApiResponse(
-        description="Search results",
-    ),
+    responses=OpenApiResponse(description="Search results"),
 )
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def search_query_view(request):
+    tenant_error = _tenant_required_response(request)
+    if tenant_error:
+        return tenant_error
+
     serializer = SearchQuerySerializer(data=request.data)
     serializer.is_valid(raise_exception=True)
 
@@ -183,45 +276,26 @@ def search_query_view(request):
         results = hybrid_search(
             query_text,
             limit=top_k,
-            user = request.user,
+            user=request.user,
         )
     except Exception as exc:
         return Response(
-            {"error": str(exc)},
+            {"error": str(exc) or "Search service unavailable"},
             status=status.HTTP_502_BAD_GATEWAY,
         )
-    result_chunk_ids = [
-        result["chunk_id"]
-        for result in results
-    ]
 
-    allowed_chunk_ids = set(
-        DocumentChunk.objects.filter(
-            id__in=result_chunk_ids
-        ).filter(
-            models.Q(document__is_public=True)
-            | models.Q(
-                document__department_id=request.user.department_id
-            )
-        ).values_list(
-            "id",
-            flat=True,
-        )
-    )
+    results = _filter_tenant_search_results(results, request)
 
     results = [
         result
         for result in results
-        if result["chunk_id"] in allowed_chunk_ids
+        if float(result.get("rerank_score", 0)) > 0
     ]
-    results = [
-        result
-        for result in results
-        if float(result["rerank_score"]) > 0
-    ]
+
     with transaction.atomic():
         search_query = SearchQuery.objects.create(
             user=request.user,
+            tenant_id=request.user.tenant_id,
             query_text=query_text,
         )
 
@@ -235,37 +309,33 @@ def search_query_view(request):
                 for result in results
             ]
         )
-        create_audit_log(
-    request.user,
-    "SEARCH",
-)
+
+        create_audit_log(request.user, "SEARCH")
+
+    response_results = []
+
+    for result in results:
+        item = _get_result_document(result)
+
+        response_results.append(
+            {
+                "chunk_id": result["chunk_id"],
+                "document_id": item.document_id,
+                "document_title": item.document.title,
+                "score": round(float(result["rerank_score"]), 6),
+                "content": result["content"],
+            }
+        )
+
     return Response(
         {
             "query_text": query_text,
-            "results": [
-                {
-                    "chunk_id": result["chunk_id"],
-                    "document_id": (
-                        result["result"].chunk.document_id
-                        if hasattr(result["result"], "chunk")
-                        else result["result"].document_id
-                    ),
-                    "document_title": (
-                        result["result"].chunk.document.title
-                        if hasattr(result["result"], "chunk")
-                        else result["result"].document.title
-                    ),
-                    "score": round(
-                        float(result["rerank_score"]),
-                        6,
-                    ),
-                    "content": result["content"],
-                }
-                for result in results
-            ],
+            "results": response_results,
         },
         status=status.HTTP_200_OK,
     )
+
+
 @extend_schema(
     request=SearchQuerySerializer,
     responses=OpenApiResponse(
@@ -273,7 +343,12 @@ def search_query_view(request):
     ),
 )
 @api_view(["POST"])
+@permission_classes([IsAuthenticated])
 def rag_query_view(request):
+    tenant_error = _tenant_required_response(request)
+    if tenant_error:
+        return tenant_error
+
     serializer = SearchQuerySerializer(data=request.data)
     serializer.is_valid(raise_exception=True)
 
@@ -288,15 +363,12 @@ def rag_query_view(request):
         )
     except Exception as exc:
         return Response(
-            {"error": str(exc)},
+            {"error": str(exc) or "RAG service unavailable"},
             status=status.HTTP_502_BAD_GATEWAY,
         )
-    
-    create_audit_log(
-    request.user,
-    "RAG_QUERY",
-)
-    
+
+    create_audit_log(request.user, "RAG_QUERY")
+
     return Response(
         {
             "query_text": query_text,
@@ -305,6 +377,8 @@ def rag_query_view(request):
         },
         status=status.HTTP_200_OK,
     )
+
+
 @extend_schema(
     request=ChatAskSerializer,
     responses={
@@ -314,8 +388,13 @@ def rag_query_view(request):
     },
 )
 @api_view(["POST"])
+@permission_classes([IsAuthenticated])
 @throttle_classes([ChatUserRateThrottle])
 def chat_ask_view(request):
+    tenant_error = _tenant_required_response(request)
+    if tenant_error:
+        return tenant_error
+
     serializer = ChatAskSerializer(data=request.data)
     serializer.is_valid(raise_exception=True)
 
@@ -330,10 +409,7 @@ def chat_ask_view(request):
                 event_type = event["type"]
 
                 if event_type == "token":
-                    data = {
-                        "content": event["content"],
-                    }
-
+                    data = {"content": event["content"]}
                     yield (
                         "event: token\n"
                         f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
@@ -342,30 +418,24 @@ def chat_ask_view(request):
                 elif event_type == "citations":
                     yield (
                         "event: citations\n"
-                        f"data: {json.dumps(event['citations'], ensure_ascii=False)}\n\n"
+                        "data: "
+                        f"{json.dumps(event['citations'], ensure_ascii=False)}\n\n"
                     )
 
                 elif event_type == "error":
-                    data = {
-                        "error": event["message"],
-                    }
-
+                    data = {"error": event["message"]}
                     yield (
                         "event: error\n"
                         f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
                     )
 
                 elif event_type == "done":
-                    yield (
-                        "event: done\n"
-                        "data: {}\n\n"
-                    )
+                    yield "event: done\ndata: {}\n\n"
 
         except Exception as exc:
             data = {
-                "error": str(exc),
+                "error": str(exc) or "RAG service unavailable"
             }
-
             yield (
                 "event: error\n"
                 f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
@@ -376,10 +446,20 @@ def chat_ask_view(request):
         content_type="text/event-stream",
     )
 
+
 @api_view(["GET"])
 @permission_classes([IsAuthenticated, IsAdminUser])
 def audit_logs_view(request):
-    queryset = AuditLog.objects.select_related("user").all()
+    tenant_error = _tenant_required_response(request)
+    if tenant_error:
+        return tenant_error
+
+    tenant_id = _get_tenant_id(request)
+
+    queryset = AuditLog.objects.filter(
+        tenant_id=tenant_id,
+        user__tenant_id=tenant_id,
+    ).select_related("user")
 
     user_id = request.query_params.get("user_id")
     date_from = request.query_params.get("date_from")
@@ -398,7 +478,7 @@ def audit_logs_view(request):
             )
 
         queryset = queryset.filter(
-            timestamp__date__gte=parsed_date_from
+            timestamp__date__gte=parsed_date_from,
         )
 
     if date_to:
@@ -411,34 +491,42 @@ def audit_logs_view(request):
             )
 
         queryset = queryset.filter(
-            timestamp__date__lte=parsed_date_to
+            timestamp__date__lte=parsed_date_to,
         )
 
-    serializer = AuditLogSerializer(
-        queryset,
-        many=True,
-    )
+    serializer = AuditLogSerializer(queryset, many=True)
 
-    return Response(
-        serializer.data,
-        status=status.HTTP_200_OK,
-    )
+    return Response(serializer.data, status=status.HTTP_200_OK)
+
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated, IsAdminUser])
 def admin_analytics_view(request):
-    # Overall document statistics
-    document_stats = Document.objects.aggregate(
+    tenant_error = _tenant_required_response(request)
+    if tenant_error:
+        return tenant_error
+
+    tenant_id = _get_tenant_id(request)
+
+    tenant_documents = Document.objects.filter(
+        tenant_id=tenant_id,
+        department__tenant_id=tenant_id,
+    )
+
+    document_stats = tenant_documents.aggregate(
         total_documents=Count("id"),
         total_file_size_bytes=Sum("file_size"),
     )
 
-    # Overall search statistics
-    total_searches = SearchQuery.objects.count()
+    tenant_searches = SearchQuery.objects.filter(
+        tenant_id=tenant_id,
+        user__tenant_id=tenant_id,
+    )
 
-    # Aggregate document statistics per department
+    total_searches = tenant_searches.count()
+
     department_documents = (
-        Document.objects
+        tenant_documents
         .values("department_id")
         .annotate(
             document_count=Count("id"),
@@ -451,10 +539,12 @@ def admin_analytics_view(request):
         for item in department_documents
     }
 
-    # Aggregate search statistics per user's current department
     department_searches = (
-        SearchQuery.objects
-        .filter(user__department_id__isnull=False)
+        tenant_searches
+        .filter(
+            user__department_id__isnull=False,
+            user__department__tenant_id=tenant_id,
+        )
         .values("user__department_id")
         .annotate(search_count=Count("id"))
     )
@@ -466,26 +556,34 @@ def admin_analytics_view(request):
 
     departments_data = []
 
-    for department in Department.objects.all().order_by("name"):
+    for department in Department.objects.filter(
+        tenant_id=tenant_id,
+    ).order_by("name"):
         document_data = document_stats_by_department.get(
             department.id,
             {},
         )
 
-        departments_data.append({
-            "department_id": department.id,
-            "department_name": department.name,
-            "document_count": document_data.get("document_count", 0),
-            "file_size_bytes": document_data.get("file_size_bytes") or 0,
-            "search_count": search_stats_by_department.get(
-                department.id,
-                0,
-            ),
-        })
+        departments_data.append(
+            {
+                "department_id": department.id,
+                "department_name": department.name,
+                "document_count": document_data.get(
+                    "document_count",
+                    0,
+                ),
+                "file_size_bytes": (
+                    document_data.get("file_size_bytes") or 0
+                ),
+                "search_count": search_stats_by_department.get(
+                    department.id,
+                    0,
+                ),
+            }
+        )
 
-    # Return only the 10 most recent searches
     recent_searches_queryset = (
-        SearchQuery.objects
+        tenant_searches
         .select_related("user", "user__department")
         .order_by("-created_at", "-id")[:10]
     )
@@ -518,17 +616,21 @@ def admin_analytics_view(request):
         status=status.HTTP_200_OK,
     )
 
+
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def current_user_view(request):
     user = request.user
 
-    return Response({
-        "id": user.id,
-        "username": user.username,
-        "role": user.role,
-        "department_id": user.department_id,
-        "department_name": (
-            user.department.name if user.department else None
-        ),
-    })
+    return Response(
+        {
+            "id": user.id,
+            "username": user.username,
+            "role": user.role,
+            "department_id": user.department_id,
+            "department_name": (
+                user.department.name if user.department else None
+            ),
+        },
+        status=status.HTTP_200_OK,
+    )

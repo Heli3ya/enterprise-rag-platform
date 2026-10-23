@@ -85,6 +85,17 @@ def test_get_user_department_id_returns_none_for_missing_user():
 def test_get_user_department_id_returns_none_for_anonymous_user():
     user = SimpleNamespace(
         is_authenticated=False,
+        tenant_id=1,
+        department_id=7,
+    )
+
+    assert get_user_department_id(user) is None
+
+
+def test_get_user_department_id_returns_none_without_tenant():
+    user = SimpleNamespace(
+        is_authenticated=True,
+        tenant_id=None,
         department_id=7,
     )
 
@@ -94,6 +105,7 @@ def test_get_user_department_id_returns_none_for_anonymous_user():
 def test_get_user_department_id_returns_department_for_authenticated_user():
     user = SimpleNamespace(
         is_authenticated=True,
+        tenant_id=1,
         department_id=7,
     )
 
@@ -108,7 +120,24 @@ def test_semantic_search_returns_empty_without_user():
 
 
 def test_semantic_search_returns_empty_without_department():
-    user = SimpleNamespace(department_id=None)
+    user = SimpleNamespace(
+        is_authenticated=True,
+        tenant_id=1,
+        department_id=None,
+    )
+
+    with patch("api.services.requests.post") as post:
+        assert semantic_search("annual leave", user=user) == []
+
+    post.assert_not_called()
+
+
+def test_semantic_search_returns_empty_without_tenant():
+    user = SimpleNamespace(
+        is_authenticated=True,
+        tenant_id=None,
+        department_id=7,
+    )
 
     with patch("api.services.requests.post") as post:
         assert semantic_search("annual leave", user=user) == []
@@ -117,7 +146,25 @@ def test_semantic_search_returns_empty_without_department():
 
 
 def test_semantic_search_maps_ai_results():
-    user = SimpleNamespace(department_id=7)
+    user = SimpleNamespace(
+        is_authenticated=True,
+        tenant_id=1,
+        department_id=7,
+    )
+
+    document = SimpleNamespace(
+        id=10,
+        title="HR Policy",
+        department_id=7,
+    )
+
+    chunk = SimpleNamespace(
+        id=25,
+        document_id=10,
+        content="Annual leave policy.",
+        chunk_index=2,
+        document=document,
+    )
 
     response = Mock()
     response.json.return_value = {
@@ -134,10 +181,17 @@ def test_semantic_search_maps_ai_results():
         ]
     }
 
-    with patch(
-        "api.services.requests.post",
-        return_value=response,
-    ) as post:
+    with (
+        patch(
+            "api.services.requests.post",
+            return_value=response,
+        ) as post,
+        patch(
+            "api.services.DocumentChunk.objects.select_related"
+        ) as select_related,
+    ):
+        select_related.return_value.filter.return_value = [chunk]
+
         results = semantic_search(
             "annual leave",
             limit=6,
@@ -148,9 +202,23 @@ def test_semantic_search_maps_ai_results():
     post.assert_called_once()
 
     request_data = post.call_args.kwargs["json"]
+
     assert request_data["query"] == "annual leave"
     assert request_data["limit"] == 6
+    assert request_data["tenant_id"] == 1
     assert request_data["allowed_department_ids"] == [7]
+
+    select_related.assert_called_once_with(
+        "document",
+        "document__department",
+    )
+
+    filter_kwargs = select_related.return_value.filter.call_args.kwargs
+
+    assert filter_kwargs["id__in"] == [25]
+    assert filter_kwargs["document__tenant_id"] == 1
+    assert filter_kwargs["document__department_id"] == 7
+    assert filter_kwargs["document__department__tenant_id"] == 1
 
     assert len(results) == 1
     assert results[0].chunk_id == 25
@@ -158,6 +226,42 @@ def test_semantic_search_maps_ai_results():
     assert results[0].chunk.content == "Annual leave policy."
     assert results[0].chunk.document.title == "HR Policy"
     assert results[0].chunk.document.department_id == 7
+
+
+def test_semantic_search_discards_unauthorized_chunks():
+    user = SimpleNamespace(
+        is_authenticated=True,
+        tenant_id=1,
+        department_id=7,
+    )
+
+    response = Mock()
+    response.json.return_value = {
+        "results": [
+            {
+                "chunk_id": 99,
+                "distance": 0.1,
+            }
+        ]
+    }
+
+    with (
+        patch(
+            "api.services.requests.post",
+            return_value=response,
+        ),
+        patch(
+            "api.services.DocumentChunk.objects.select_related"
+        ) as select_related,
+    ):
+        select_related.return_value.filter.return_value = []
+
+        results = semantic_search(
+            "annual leave",
+            user=user,
+        )
+
+    assert results == []
 
 
 def test_generate_embeddings_returns_vectors_and_dimension():
@@ -264,12 +368,12 @@ def test_rerank_results_sorts_by_score_and_handles_missing_scores():
     assert reranked[1]["rerank_score"] == 0.2
     assert reranked[2]["rerank_score"] == float("-inf")
 
+
 def test_generate_rag_answer_returns_message_when_no_results():
+    from api.services import generate_rag_answer
+
     with patch("api.services.hybrid_search", return_value=[]):
-        result = __import__(
-            "api.services",
-            fromlist=["generate_rag_answer"],
-        ).generate_rag_answer("annual leave")
+        result = generate_rag_answer("annual leave")
 
     assert result == {
         "answer": "No relevant documents were found.",
@@ -281,8 +385,12 @@ def test_generate_rag_answer_returns_answer_and_citations():
     from api.services import generate_rag_answer
 
     search_results = [
-        {"chunk_id": 12, "content": "Employees receive annual leave."}
+        {
+            "chunk_id": 12,
+            "content": "Employees receive annual leave.",
+        }
     ]
+
     citation_data = [
         {
             "document_id": 5,
@@ -318,10 +426,18 @@ def test_generate_rag_answer_raises_error_when_response_is_missing():
     with (
         patch(
             "api.services.hybrid_search",
-            return_value=[{"chunk_id": 12, "content": "Annual leave"}],
+            return_value=[
+                {
+                    "chunk_id": 12,
+                    "content": "Annual leave",
+                }
+            ],
         ),
         patch("api.services.requests.post", return_value=response),
-        pytest.raises(RuntimeError, match="LLM response text is missing"),
+        pytest.raises(
+            RuntimeError,
+            match="LLM response text is missing",
+        ),
     ):
         generate_rag_answer("annual leave")
 
@@ -361,7 +477,12 @@ def test_generate_rag_stream_emits_tokens_citations_and_done():
     with (
         patch(
             "api.services.hybrid_search",
-            return_value=[{"chunk_id": 12, "content": "Annual leave requires approval."}],
+            return_value=[
+                {
+                    "chunk_id": 12,
+                    "content": "Annual leave requires approval.",
+                }
+            ],
         ),
         patch("api.services.requests.post", return_value=response),
         patch("api.services.build_citations", return_value=citations),
@@ -387,7 +508,11 @@ def test_generate_rag_stream_emits_tokens_citations_and_done():
 def test_hybrid_search_returns_empty_when_no_results():
     from api.services import hybrid_search
 
-    user = SimpleNamespace(department_id=7)
+    user = SimpleNamespace(
+        is_authenticated=True,
+        tenant_id=1,
+        department_id=7,
+    )
 
     with (
         patch("api.services.semantic_search", return_value=[]) as semantic,
@@ -397,21 +522,34 @@ def test_hybrid_search_returns_empty_when_no_results():
         result = hybrid_search("annual leave", limit=2, user=user)
 
     assert result == []
-    semantic.assert_called_once_with("annual leave", limit=6, user=user)
-    keyword.assert_called_once_with("annual leave", limit=6, user=user)
+    semantic.assert_called_once_with(
+        "annual leave",
+        limit=6,
+        user=user,
+    )
+    keyword.assert_called_once_with(
+        "annual leave",
+        limit=6,
+        user=user,
+    )
     rerank.assert_called_once_with("annual leave", [])
 
 
 def test_hybrid_search_combines_results_and_applies_query_bonus():
     from api.services import hybrid_search
 
-    user = SimpleNamespace(department_id=7)
+    user = SimpleNamespace(
+        is_authenticated=True,
+        tenant_id=1,
+        department_id=7,
+    )
 
     semantic_result = SimpleNamespace(
         chunk_id=10,
         distance=0.2,
         chunk=SimpleNamespace(content="Annual leave policy"),
     )
+
     keyword_result = SimpleNamespace(
         id=20,
         rank=0.8,
@@ -438,7 +576,11 @@ def test_hybrid_search_combines_results_and_applies_query_bonus():
             side_effect=fake_rerank,
         ) as rerank,
     ):
-        result = hybrid_search("annual leave", limit=5, user=user)
+        result = hybrid_search(
+            "annual leave",
+            limit=5,
+            user=user,
+        )
 
     assert len(result) == 2
     assert result[0]["chunk_id"] == 10
@@ -453,7 +595,12 @@ def test_hybrid_search_combines_results_and_applies_query_bonus():
 def test_hybrid_search_respects_result_limit():
     from api.services import hybrid_search
 
-    user = SimpleNamespace(department_id=7)
+    user = SimpleNamespace(
+        is_authenticated=True,
+        tenant_id=1,
+        department_id=7,
+    )
+
     semantic_results = [
         SimpleNamespace(
             chunk_id=index,
@@ -474,6 +621,10 @@ def test_hybrid_search_respects_result_limit():
             side_effect=lambda query, results: results,
         ),
     ):
-        result = hybrid_search("policy", limit=2, user=user)
+        result = hybrid_search(
+            "policy",
+            limit=2,
+            user=user,
+        )
 
     assert len(result) == 2
