@@ -454,7 +454,7 @@ def generate_rag_answer(query, limit=5, user=None):
     prompt = build_rag_prompt(query, results)
 
     response = requests.post(
-        f"{settings.AI_SERVICE_URL}/api/generate/",
+        f"{settings.AI_SERVICE_URL}/api/llm/",
         json={"prompt": prompt},
         timeout=120,
     )
@@ -494,7 +494,7 @@ def generate_rag_stream(query, limit=5, user=None):
     prompt = build_rag_prompt(query, results)
 
     response = requests.post(
-        f"{settings.AI_SERVICE_URL}/api/generate/stream/",
+        f"{settings.AI_SERVICE_URL}/api/llm/stream/",
         json={"prompt": prompt},
         stream=True,
         timeout=120,

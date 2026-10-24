@@ -407,7 +407,10 @@ def test_generate_rag_answer_returns_answer_and_citations():
 
     with (
         patch("api.services.hybrid_search", return_value=search_results),
-        patch("api.services.requests.post", return_value=response),
+        patch(
+            "api.services.requests.post",
+            return_value=response,
+        ) as post,
         patch("api.services.build_citations", return_value=citation_data),
     ):
         result = generate_rag_answer("annual leave")
@@ -415,6 +418,8 @@ def test_generate_rag_answer_returns_answer_and_citations():
     assert result["answer"] == "Employees receive annual leave. [12]"
     assert result["citations"] == citation_data
     response.raise_for_status.assert_called_once()
+    post.assert_called_once()
+    assert post.call_args.args[0].endswith("/api/llm/")
 
 
 def test_generate_rag_answer_raises_error_when_response_is_missing():
@@ -484,7 +489,10 @@ def test_generate_rag_stream_emits_tokens_citations_and_done():
                 }
             ],
         ),
-        patch("api.services.requests.post", return_value=response),
+        patch(
+            "api.services.requests.post",
+            return_value=response,
+        ) as post,
         patch("api.services.build_citations", return_value=citations),
     ):
         events = list(generate_rag_stream("annual leave"))
@@ -503,6 +511,8 @@ def test_generate_rag_stream_emits_tokens_citations_and_done():
     }
     assert events[3] == {"type": "done"}
     response.raise_for_status.assert_called_once()
+    post.assert_called_once()
+    assert post.call_args.args[0].endswith("/api/llm/stream/")
 
 
 def test_hybrid_search_returns_empty_when_no_results():
