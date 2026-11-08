@@ -1,0 +1,119 @@
+Acme Corporation — People Operations
+Guide: New Employee Onboarding
+Guide owner: People Operations Manager
+Effective: 1 January 2026
+Document code: HR-ON-001
+
+1. BEFORE THE FIRST DAY
+
+1.1 People Operations sends the welcome email 5 business days before the
+start date. It contains the first-day schedule, the office address and the
+name of the assigned buddy.
+
+1.2 The hiring manager confirms the laptop specification at least 7 business
+days before the start date so that IT can prepare the device.
+
+1.3 The new employee completes the personal details form and the tax
+declaration in the HR portal before the first day.
+
+2. DAY ONE
+
+2.1 The employee receives a badge, a laptop and a welcome kit from the
+reception desk.
+
+2.2 IT creates the email account, the directory account, the HR portal
+account and the collaboration suite account within 4 hours of arrival.
+
+2.3 The hiring manager holds a 30 minute welcome meeting and explains the
+team charter.
+
+2.4 The buddy takes the new employee to lunch and introduces the immediate
+team.
+
+3. FIRST WEEK
+
+3.1 Security awareness training, which takes about 2 hours, must be
+completed during the first week.
+
+3.2 HR orientation covers payroll, benefits, the leave policy and the code
+of conduct, and lasts 90 minutes.
+
+3.3 The employee meets every direct team member in a 15 minute
+introduction meeting.
+
+3.4 The employee reads the department handbook and completes the
+acknowledgement form.
+
+4. BUDDY PROGRAM
+
+4.1 Every new employee is assigned a buddy for the first 90 days.
+
+4.2 The buddy is a peer from the same department, not the hiring manager.
+
+4.3 The buddy holds a 30 minute check-in every week for the first month,
+then every two weeks until day 90.
+
+5. PROBATION
+
+5.1 The standard probation period is 90 calendar days.
+
+5.2 A formal review takes place at day 30, day 60 and day 90.
+
+5.3 The probation may be extended once, by a maximum of 30 days, with
+written notice at least 5 business days before the original end date.
+
+5.4 Probation can be confirmed early after day 60 with manager and HR
+agreement.
+
+6. REQUIRED TRAINING
+
+6.1 The following training must be completed within 14 calendar days of the
+start date: security awareness, code of conduct, and anti-harassment.
+
+6.2 Managers must additionally complete the "hiring and feedback" module
+within 30 days.
+
+6.3 Training completion is tracked in the learning portal and reported to
+People Operations monthly.
+
+7. GOALS AND FEEDBACK
+
+7.1 Performance goals for the first six months are agreed with the manager
+within 30 days of the start date.
+
+7.2 The employee completes a short feedback survey on day 7, day 30 and day
+90.
+
+8. ACCESS AND TOOLS
+
+8.1 Access requests are submitted through the IT portal. The service level
+for a standard request is 2 business days.
+
+8.2 Access to Confidential data requires the approval of the data owner and
+is granted for a maximum of 12 months before review.
+
+9. PAYROLL AND ADMINISTRATION
+
+9.1 Salaries are paid monthly on the 25th. If the 25th falls on a weekend,
+payment is made on the preceding business day.
+
+9.2 Timesheets must be submitted by the 20th of each month.
+
+9.3 The corporate expense card is issued after the probation period is
+confirmed.
+
+10. FIRST 90 DAYS CHECKLIST
+
+10.1 Day 7: complete the onboarding survey and confirm that all accounts
+work.
+
+10.2 Day 30: first probation review and goal setting.
+
+10.3 Day 60: second probation review and mid-point feedback.
+
+10.4 Day 90: final probation review, confirmation letter and expense card
+issuance.
+
+11. CONTACT
+
+Questions about onboarding should be sent to people@acme.example.

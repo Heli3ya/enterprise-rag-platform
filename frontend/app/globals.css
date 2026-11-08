@@ -1,8 +1,23 @@
 @import "tailwindcss";
 
+/* Class-based dark mode: the `dark` class is set on <html> by the
+   preferences bootstrap script and by the theme toggle. */
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
-	--background: #ffffff;
+	--background: #f3f4f6;
 	--foreground: #171717;
+	--surface: #ffffff;
+	--surface-muted: #f9fafb;
+	--border: #e5e7eb;
+}
+
+.dark {
+	--background: #0b1120;
+	--foreground: #e6ebf4;
+	--surface: #131c2e;
+	--surface-muted: #0f1726;
+	--border: #223049;
 }
 
 @theme inline {
@@ -12,15 +27,249 @@
 	--font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-	:root {
-		--background: #0a0a0a;
-		--foreground: #ededed;
-	}
+html {
+	background-color: var(--background);
 }
 
 body {
 	background: var(--background);
 	color: var(--foreground);
-	font-family: Arial, Helvetica, sans-serif;
+	font-family:
+		system-ui,
+		-apple-system,
+		"Segoe UI",
+		Tahoma,
+		Arial,
+		Helvetica,
+		sans-serif;
+	transition:
+		background-color 0.2s ease,
+		color 0.2s ease;
+}
+
+/* Persian text needs a slightly taller line box to stay readable. */
+html[lang="fa"] body {
+	line-height: 1.75;
+}
+
+/* ------------------------------------------------------------------ *
+ * Dark theme
+ *
+ * The components use Tailwind's neutral palette directly (bg-white,
+ * text-gray-800, border-gray-200, ...). Instead of touching ~250 class
+ * strings — and risking a layout regression — the palette is remapped
+ * once, here. Every rule is scoped to `.dark`, so light mode is byte
+ * for byte the previous design.
+ * ------------------------------------------------------------------ */
+
+.dark body {
+	background-color: #0b1120;
+	color: #e6ebf4;
+}
+
+/* surfaces */
+.dark .bg-white {
+	background-color: #131c2e;
+}
+
+.dark .bg-white\/85 {
+	background-color: rgba(19, 28, 46, 0.85);
+}
+
+.dark .bg-gray-50 {
+	background-color: #0f1726;
+}
+
+.dark .bg-gray-100 {
+	background-color: #0b1120;
+}
+
+.dark .bg-gray-200 {
+	background-color: #263143;
+}
+
+.dark .bg-gray-400 {
+	background-color: #55637a;
+}
+
+/* text */
+.dark .text-gray-900 {
+	color: #f2f6fc;
+}
+
+.dark .text-gray-800 {
+	color: #e2e8f0;
+}
+
+.dark .text-gray-700 {
+	color: #c8d3e2;
+}
+
+.dark .text-gray-600 {
+	color: #b3c0d1;
+}
+
+.dark .text-gray-500 {
+	color: #94a3b8;
+}
+
+.dark .text-gray-400 {
+	color: #7b8798;
+}
+
+/* borders */
+.dark .border-gray-100 {
+	border-color: #1c2942;
+}
+
+.dark .border-gray-200 {
+	border-color: #223049;
+}
+
+.dark .border-gray-300 {
+	border-color: #33415c;
+}
+
+/* accent */
+.dark .text-blue-700 {
+	color: #93c5fd;
+}
+
+.dark .text-blue-600 {
+	color: #7dabf8;
+}
+
+.dark .bg-blue-50 {
+	background-color: rgba(59, 130, 246, 0.14);
+}
+
+.dark .bg-blue-100 {
+	background-color: rgba(59, 130, 246, 0.22);
+}
+
+.dark .border-blue-200 {
+	border-color: rgba(59, 130, 246, 0.28);
+}
+
+.dark .border-blue-300 {
+	border-color: rgba(59, 130, 246, 0.38);
+}
+
+.dark .border-blue-400 {
+	border-color: rgba(59, 130, 246, 0.55);
+}
+
+.dark .ring-blue-100 {
+	--tw-ring-color: rgba(59, 130, 246, 0.28);
+}
+
+.dark .ring-blue-300 {
+	--tw-ring-color: rgba(59, 130, 246, 0.5);
+}
+
+/* danger */
+.dark .bg-red-50 {
+	background-color: rgba(239, 68, 68, 0.13);
+}
+
+.dark .bg-red-100 {
+	background-color: rgba(239, 68, 68, 0.2);
+}
+
+.dark .border-red-200 {
+	border-color: rgba(239, 68, 68, 0.32);
+}
+
+.dark .text-red-600 {
+	color: #f87171;
+}
+
+.dark .text-red-700 {
+	color: #fca5a5;
+}
+
+/* success */
+.dark .bg-green-50 {
+	background-color: rgba(34, 197, 94, 0.13);
+}
+
+.dark .bg-green-100 {
+	background-color: rgba(34, 197, 94, 0.2);
+}
+
+.dark .border-green-200 {
+	border-color: rgba(34, 197, 94, 0.3);
+}
+
+.dark .text-green-700 {
+	color: #86efac;
+}
+
+/* warning / highlight */
+.dark .bg-amber-50 {
+	background-color: rgba(245, 158, 11, 0.13);
+}
+
+.dark .bg-amber-100 {
+	background-color: rgba(245, 158, 11, 0.2);
+}
+
+.dark .text-amber-700 {
+	color: #fcd34d;
+}
+
+.dark .text-amber-800 {
+	color: #fcd34d;
+}
+
+.dark .text-amber-900 {
+	color: #fde68a;
+}
+
+.dark .bg-yellow-200 {
+	background-color: rgba(250, 204, 21, 0.28);
+}
+
+/* interactive states */
+.dark .hover\:bg-gray-100:hover {
+	background-color: #1a2537;
+}
+
+.dark .hover\:bg-gray-200:hover {
+	background-color: #2b374b;
+}
+
+.dark .hover\:text-gray-900:hover {
+	color: #f2f6fc;
+}
+
+.dark .hover\:text-gray-800:hover {
+	color: #e2e8f0;
+}
+
+.dark .disabled\:bg-gray-100:disabled {
+	background-color: #162034;
+}
+
+.dark input::placeholder,
+.dark textarea::placeholder {
+	color: #6f7d92;
+}
+
+.dark .shadow-lg {
+	box-shadow: 0 18px 40px -22px rgba(0, 0, 0, 0.85);
+}
+
+.dark .shadow-sm {
+	box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.45);
+}
+
+/* Keep native scrollbars and form controls in the same theme. */
+.dark {
+	color-scheme: dark;
+}
+
+/* Slightly tighter tracking keeps Persian headings from looking loose. */
+html[dir="rtl"] {
+	letter-spacing: 0;
 }

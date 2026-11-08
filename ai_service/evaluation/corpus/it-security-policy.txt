@@ -1,0 +1,128 @@
+Acme Corporation — Information Technology
+Policy: Information Security
+Policy owner: Chief Information Security Officer
+Effective: 1 January 2026
+Document code: IT-SEC-004
+
+1. SCOPE
+
+This policy applies to every employee, contractor and third party who
+accesses Acme systems, data or networks, on any device and from any
+location.
+
+2. PASSWORDS AND AUTHENTICATION
+
+2.1 Passwords must be at least 14 characters long and must not reuse any
+of the previous 5 passwords.
+
+2.2 Passwords must be rotated every 180 days. Rotating earlier is allowed
+and does not count against the reuse limit.
+
+2.3 Multi-factor authentication is mandatory for every remote connection,
+for the email system, for the HR portal and for all administrative
+consoles. SMS is not accepted as a second factor; a hardware key or a
+time-based authenticator application must be used.
+
+2.4 An account is locked for 30 minutes after 5 consecutive failed login
+attempts. Repeated lockouts within 24 hours are reported to the security
+team.
+
+2.5 Shared accounts are prohibited. Service accounts require a documented
+owner and a rotation schedule approved by the security team.
+
+3. DEVICES
+
+3.1 Full-disk encryption is mandatory on every laptop and mobile device
+that stores company data. BitLocker is required on Windows and FileVault on
+macOS.
+
+3.2 New devices must be enrolled in the mobile device management system
+within 24 hours of being issued.
+
+3.3 Devices must be configured to lock automatically after 5 minutes of
+inactivity and must require authentication to resume.
+
+3.4 Only company-issued, hardware-encrypted USB storage may be used.
+Personal USB drives are blocked by endpoint protection.
+
+4. NETWORK
+
+4.1 The corporate VPN must be used whenever a company device connects from
+a public or untrusted network.
+
+4.2 Split tunnelling is disabled on all company devices. All traffic is
+routed through the corporate gateway while the VPN is connected.
+
+4.3 Guest Wi-Fi is isolated from the corporate network and must never be
+used to access internal systems.
+
+5. DATA CLASSIFICATION
+
+5.1 Information is classified into four levels: Public, Internal,
+Confidential and Restricted.
+
+5.2 Confidential data must be encrypted at rest and in transit. Sharing
+outside the company requires written approval from the data owner.
+
+5.3 Restricted data may only be accessed from managed devices, only by
+named individuals approved by the CISO, and must never be copied to
+removable media.
+
+5.4 Data must not be stored in personal cloud accounts. Approved storage is
+the corporate document management system.
+
+6. SOFTWARE
+
+6.1 Software may only be installed from the approved software catalogue.
+
+6.2 A request to add new software requires a security review, which is
+completed within 5 business days.
+
+6.3 Unapproved software found on a device is removed and the incident is
+logged.
+
+7. INCIDENT REPORTING
+
+7.1 Suspected security incidents must be reported to security@acme.example
+within 1 hour of detection.
+
+7.2 A severity 1 incident, defined as confirmed data loss, ransomware or
+compromise of an administrative account, triggers a page to the on-call
+engineer, who must respond within 15 minutes.
+
+7.3 Incidents must not be investigated by the reporting employee beyond
+preserving evidence and disconnecting the affected device from the network.
+
+8. ACCESS MANAGEMENT
+
+8.1 Access reviews are performed quarterly by every department head.
+
+8.2 Privileged and administrative access is reviewed monthly.
+
+8.3 When an employee leaves the company, all accounts are disabled within
+2 hours of the recorded departure time and deleted after 30 days.
+
+8.4 Access requests are submitted through the IT portal and are fulfilled
+within 2 business days.
+
+9. LOGGING AND MONITORING
+
+9.1 Authentication, authorisation and administrative action logs are
+retained for 12 months.
+
+9.2 Logs are shipped to the central logging platform within 5 minutes of
+being generated.
+
+10. SECURITY AWARENESS
+
+10.1 Every employee completes security awareness training within 14 days of
+joining and refreshes it annually.
+
+10.2 Phishing simulation campaigns are run quarterly. An employee who
+clicks more than twice in a rolling 12-month period must complete
+additional training within 10 working days.
+
+11. EXCEPTIONS
+
+Exceptions to this policy require written approval from the CISO and are
+reviewed every 6 months.

@@ -1,0 +1,110 @@
+Acme Corporation — Human Resources
+Policy: Annual, Sick and Parental Leave
+Policy owner: HR Director
+Effective: 1 January 2026
+Document code: HR-LV-001
+
+1. PURPOSE
+
+This policy defines the leave entitlements available to all full-time and
+part-time employees of Acme Corporation and the process for requesting
+leave. It applies to every department and to every employment contract
+unless a local statutory rule is more generous.
+
+2. ANNUAL LEAVE
+
+2.1 Full-time employees accrue 26 working days of paid annual leave per
+calendar year. Leave accrues at a rate of 2.17 days per completed month of
+service.
+
+2.2 Employees who join during the year receive a pro-rated entitlement
+based on the number of complete months remaining in the calendar year.
+
+2.3 Part-time employees receive the same entitlement pro-rated by their
+contracted weekly hours.
+
+2.4 A maximum of 5 unused annual leave days may be carried over into the
+following calendar year. Carried-over days must be used before 31 March;
+after that date they expire and are not paid out.
+
+2.5 Annual leave must be requested through the HR portal at least 5
+working days before the first day of absence and requires line manager
+approval. Requests for periods longer than 10 consecutive working days
+also require HR Director approval.
+
+3. SICK LEAVE
+
+3.1 Employees receive full pay for the first 10 working days of certified
+sickness absence in each calendar year.
+
+3.2 Beyond the first 10 working days, sick leave is paid at 70 percent of
+base salary for a maximum of 30 additional working days per calendar year.
+
+3.3 A medical certificate issued by a licensed practitioner is required
+for any sickness absence longer than 2 consecutive working days.
+
+3.4 Employees must notify their line manager within 4 hours of the start
+of their scheduled shift on the first day of sickness absence.
+
+4. PARENTAL LEAVE
+
+4.1 The primary caregiver is entitled to 90 calendar days of paid parental
+leave. The leave may start up to 2 weeks before the expected delivery date.
+
+4.2 The secondary caregiver is entitled to 30 calendar days of paid
+parental leave, which must be taken within 6 months of the birth or
+adoption.
+
+4.3 Parental leave must be requested at least 30 calendar days in advance,
+except in the case of a premature birth.
+
+4.4 Parental leave does not interrupt annual leave accrual.
+
+5. BEREAVEMENT LEAVE
+
+5.1 Employees are entitled to 5 working days of paid bereavement leave for
+the death of an immediate family member (spouse, child, parent or sibling).
+
+5.2 Employees are entitled to 2 working days of paid bereavement leave for
+the death of an extended family member (grandparent, grandchild, aunt,
+uncle, niece or nephew).
+
+6. UNPAID LEAVE
+
+6.1 Employees may request up to 60 calendar days of unpaid leave per
+calendar year. Unpaid leave requires HR Director approval and cannot be
+used to extend a notice period.
+
+7. STUDY LEAVE
+
+7.1 Every employee is entitled to 5 working days of paid study leave per
+calendar year for examinations or professional certification.
+
+7.2 Study leave must be requested at least 10 working days in advance and
+supported by a registration document.
+
+8. PUBLIC HOLIDAYS
+
+8.1 The company observes 12 fixed public holidays and grants 4 additional
+floating holidays that employees may take on dates of their choosing.
+
+8.2 Floating holidays follow the same approval process as annual leave and
+expire at the end of the calendar year.
+
+9. EMERGENCY LEAVE
+
+9.1 Where an emergency makes advance notice impossible, the employee must
+inform their line manager within 4 hours of the start of the shift and
+submit the request in the HR portal within 2 working days.
+
+10. RECORD KEEPING
+
+10.1 Leave balances are visible in the HR portal and are updated nightly.
+
+10.2 Managers must approve or reject a leave request within 3 working days
+of submission. A request that is not actioned within 3 working days is
+escalated automatically to the department head.
+
+11. CONTACT
+
+Questions about this policy should be sent to hr@acme.example.

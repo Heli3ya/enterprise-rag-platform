@@ -1,0 +1,105 @@
+Acme Corporation — Procurement
+Policy: Purchasing and Vendor Management
+Policy owner: Head of Procurement
+Effective: 1 January 2026
+Document code: PROC-001
+
+1. PURPOSE AND SCOPE
+
+This policy governs the purchase of goods and services on behalf of Acme
+Corporation, including the selection of vendors, the approval of spend and
+the payment of invoices. It applies to every department.
+
+2. PURCHASE THRESHOLDS
+
+2.1 Purchases below 1,000 USD require a single written quotation.
+
+2.2 Purchases between 1,000 USD and 10,000 USD require at least three
+written quotations from different vendors.
+
+2.3 Purchases above 10,000 USD require a formal request for proposal (RFP)
+process managed by Procurement.
+
+2.4 Purchases above 50,000 USD additionally require a competitive
+negotiation and a signed contract reviewed by Legal.
+
+3. APPROVAL AUTHORITY
+
+3.1 Purchases below 1,000 USD require line manager approval.
+
+3.2 Purchases between 1,000 USD and 10,000 USD require director approval.
+
+3.3 Purchases between 10,000 USD and 50,000 USD require Chief Financial
+Officer approval.
+
+3.4 Purchases above 50,000 USD require Chief Executive Officer approval.
+
+3.5 No employee may approve a purchase that benefits a relative or a
+company in which they hold a financial interest.
+
+4. PURCHASE ORDERS
+
+4.1 A purchase order is mandatory before any invoice is accepted.
+
+4.2 Invoices without a matching purchase order are rejected by Finance.
+
+4.3 The purchase order must reference the approved quotation or contract
+number.
+
+5. VENDOR ONBOARDING
+
+5.1 Every new vendor must complete a security questionnaire and provide a
+valid tax identification number.
+
+5.2 Vendor onboarding takes up to 10 business days from the submission of
+complete documentation.
+
+5.3 Vendors handling Confidential or Restricted data must also complete an
+annual security assessment.
+
+5.4 The preferred vendor list is reviewed once per year by Procurement.
+
+6. CONTRACTS
+
+6.1 Any contract with a value above 25,000 USD or a duration longer than 12
+months must be reviewed by Legal before signature.
+
+6.2 Contracts must include a termination clause allowing cancellation with
+30 days written notice.
+
+6.3 Automatic renewal clauses longer than 12 months are not permitted.
+
+7. EMERGENCY PURCHASES
+
+7.1 An emergency purchase is permitted when a delay would cause a security
+incident, a production outage or a legal breach.
+
+7.2 Emergency purchases are capped at 5,000 USD.
+
+7.3 Retrospective approval must be obtained within 2 business days, with a
+written explanation of the urgency.
+
+8. INVOICES AND PAYMENT
+
+8.1 Standard payment terms are 30 days net from the invoice date.
+
+8.2 A discount of 2 percent is available when an invoice is paid within 10
+days.
+
+8.3 Payments are made twice per month, on the 10th and the 25th.
+
+9. CONFLICTS OF INTEREST
+
+9.1 Employees involved in procurement must declare any conflict of interest
+annually.
+
+9.2 Undeclared conflicts are treated as a disciplinary matter.
+
+10. RECORD RETENTION
+
+10.1 Quotations, purchase orders, contracts and invoices are retained for 7
+years.
+
+11. CONTACT
+
+Questions about this policy should be sent to procurement@acme.example.

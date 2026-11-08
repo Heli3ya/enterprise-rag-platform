@@ -1,0 +1,114 @@
+Acme Corporation — Finance
+Policy: Business Travel and Expense
+Policy owner: Corporate Controller
+Effective: 1 January 2026
+Document code: FIN-TE-002
+
+1. SCOPE
+
+This policy covers all business travel, accommodation, meals and incidental
+expenses incurred on behalf of Acme Corporation. It applies to employees,
+contractors and guests travelling on company business.
+
+2. APPROVAL
+
+2.1 Travel must be approved before booking.
+
+2.2 Trips with an estimated cost below 2,000 USD require line manager
+approval. Trips between 2,000 USD and 5,000 USD require director approval.
+Trips above 5,000 USD require Chief Financial Officer approval.
+
+2.3 International travel additionally requires approval from the department
+head, regardless of cost.
+
+3. BOOKING
+
+3.1 Flights and hotels must be booked through the corporate travel portal.
+
+3.2 Bookings should be made at least 14 days before departure. Bookings
+made with less than 7 days notice require a written justification.
+
+3.3 Economy class is required for flights shorter than 6 hours. Premium
+economy may be booked for flights longer than 6 hours.
+
+3.4 Business class is permitted only for flights longer than 9 hours and
+requires Vice President approval.
+
+4. ACCOMMODATION AND PER DIEM
+
+4.1 The hotel limit is 150 USD per night for domestic travel.
+
+4.2 For international travel the hotel limit is 250 USD per night in tier 1
+cities and 180 USD per night in tier 2 cities.
+
+4.3 The daily meal allowance is 45 USD for domestic travel and 80 USD for
+international travel. In tier 1 international cities the allowance is 110
+USD per day.
+
+4.4 The per diem is paid as a flat allowance. Receipts are not required for
+meals within the allowance, and unspent allowance is not reclaimed.
+
+5. GROUND TRANSPORT AND MILEAGE
+
+5.1 Public transport, ride sharing and airport transfers are reimbursable
+with a receipt.
+
+5.2 Employees who use a private vehicle for business travel are reimbursed
+at 0.55 USD per mile.
+
+5.3 Parking and tolls are reimbursable with a receipt.
+
+6. RECEIPTS
+
+6.1 Itemised receipts are required for every expense above 25 USD.
+
+6.2 Receipts must show the date, the vendor, the amount and the currency.
+
+6.3 Credit card statements are not accepted as a substitute for an itemised
+receipt.
+
+7. CORPORATE CARD
+
+7.1 Flights, hotels and car rentals must be paid with the corporate card.
+
+7.2 Meals and incidental expenses may be paid with a personal card and
+reimbursed.
+
+8. REIMBURSEMENT
+
+8.1 Expense claims must be submitted within 30 days of the end of the trip.
+
+8.2 Approved claims are reimbursed within 10 business days.
+
+8.3 Claims submitted more than 60 days after the trip end require Finance
+Director approval.
+
+9. NON-REIMBURSABLE ITEMS
+
+9.1 Alcoholic beverages are not reimbursable.
+
+9.2 Personal entertainment, minibar charges, spa treatments and airline
+lounge access purchased individually are not reimbursable.
+
+9.3 Traffic fines and parking penalties are not reimbursable.
+
+9.4 Airline upgrades purchased with personal funds are not reimbursable.
+
+10. INSURANCE
+
+10.1 Travel insurance is mandatory for every international trip and is
+purchased by the company at the time of booking.
+
+10.2 Domestic travel insurance is optional and is not reimbursed.
+
+11. EXTENSIONS AND PERSONAL DAYS
+
+11.1 Personal days added to a business trip are permitted but all costs for
+those days are the responsibility of the employee.
+
+11.2 The company does not reimburse accommodation or meals for personal
+days.
+
+12. CONTACT
+
+Questions about this policy should be sent to travel@acme.example.
