@@ -35,6 +35,15 @@ services:
     image: ollama/ollama:latest
     profiles: ["ollama"]
     restart: unless-stopped
+    environment:
+      # Keep the model resident between questions. Without this Ollama
+      # unloads it after five idle minutes and the next answer pays a
+      # 10-25 second reload on CPU.
+      OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-30m}
+      # One model, one request at a time: two concurrent generations on
+      # four cores simply halve each other's speed.
+      OLLAMA_MAX_LOADED_MODELS: "1"
+      OLLAMA_NUM_PARALLEL: "1"
     volumes:
       - ollama_data:/root/.ollama
     healthcheck:
@@ -49,12 +58,10 @@ services:
     profiles: ["ollama"]
     restart: "no"
     environment:
-      OLLAMA_HOST: http://ollama:11434
+      OLLAMA_HOST: "http://ollama:11434"
       LLM_MODEL: ${LLM_MODEL:-qwen2.5:3b}
     entrypoint: ["/bin/sh", "-c"]
-    command:
-      - |
-        ollama pull "$${LLM_MODEL}"
+    command: 'ollama pull "$${LLM_MODEL}"'
     depends_on:
       ollama:
         condition: service_healthy
@@ -71,25 +78,49 @@ services:
       DB_HOST: postgres
       DB_PORT: "5432"
       LLM_PROVIDER: ${LLM_PROVIDER:-ollama}
-      LLM_BASE_URL: ${LLM_BASE_URL:-http://ollama:11434/api}
+      LLM_BASE_URL: "${LLM_BASE_URL:-http://ollama:11434/api}"
       LLM_MODEL: ${LLM_MODEL:-qwen2.5:3b}
       LLM_API_KEY: ${LLM_API_KEY:-}
       HF_HOME: /app/.cache/huggingface
+      AI_OFFLINE: ${AI_OFFLINE:-0}
+      AI_ENABLE_RERANKER: ${AI_ENABLE_RERANKER:-1}
+      AI_TORCH_THREADS: ${AI_TORCH_THREADS:-2}
+      AI_MODEL_LOAD_TIMEOUT: ${AI_MODEL_LOAD_TIMEOUT:-180}
+      OMP_NUM_THREADS: ${AI_TORCH_THREADS:-2}
+      TOKENIZERS_PARALLELISM: "false"
+      # RAG evaluation. Scheduling is off unless AI_EVAL_SCHEDULE_HOURS > 0.
+      AI_EVAL_BACKEND: ${AI_EVAL_BACKEND:-internal}
+      AI_EVAL_TOKEN: ${AI_EVAL_TOKEN:-}
+      AI_EVAL_TENANT_ID: ${AI_EVAL_TENANT_ID:-}
+      AI_EVAL_DEPARTMENT_IDS: ${AI_EVAL_DEPARTMENT_IDS:-}
+      AI_EVAL_METRICS: ${AI_EVAL_METRICS:-}
+      AI_EVAL_TOP_K: ${AI_EVAL_TOP_K:-5}
+      AI_EVAL_JUDGE_TIMEOUT: ${AI_EVAL_JUDGE_TIMEOUT:-180}
+      AI_EVAL_LLM_DECOMPOSITION: ${AI_EVAL_LLM_DECOMPOSITION:-0}
+      AI_EVAL_MAX_SAMPLES: ${AI_EVAL_MAX_SAMPLES:-0}
+      AI_EVAL_SCHEDULE_HOURS: ${AI_EVAL_SCHEDULE_HOURS:-0}
+      AI_EVAL_SCHEDULE_LIMIT: ${AI_EVAL_SCHEDULE_LIMIT:-10}
+      AI_EVAL_KEEP_REPORTS: ${AI_EVAL_KEEP_REPORTS:-30}
+      # Shared secret for Django -> AI calls. See AI_INTERNAL_TOKEN in .env.
+      AI_INTERNAL_TOKEN: ${AI_INTERNAL_TOKEN:-}
     volumes:
       - ai_model_cache:/app/.cache/huggingface
+      - eval_reports:/app/evaluation/reports
     depends_on:
       postgres:
         condition: service_healthy
     healthcheck:
+      # /health answers as soon as the process is up; the models keep
+      # loading in the background and report their state in the payload.
       test:
         - CMD
         - python
         - -c
         - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health', timeout=5)"
-      interval: 30s
+      interval: 15s
       timeout: 10s
-      retries: 5
-      start_period: 10m
+      retries: 10
+      start_period: 60s
 
   django:
     image: enterprise-rag-django:latest
@@ -101,15 +132,77 @@ services:
       - .env
     environment:
       DJANGO_DEBUG: "False"
-      DJANGO_ALLOWED_HOSTS: localhost,127.0.0.1,django
+      DJANGO_ALLOWED_HOSTS: "localhost,127.0.0.1,django"
       DB_HOST: postgres
       DB_PORT: "5432"
-      REDIS_CACHE_URL: redis://redis:6379/1
-      CELERY_BROKER_URL: redis://redis:6379/0
-      CELERY_RESULT_BACKEND: redis://redis:6379/0
-      AI_SERVICE_URL: http://ai_service:8001
+      REDIS_CACHE_URL: "redis://redis:6379/1"
+      CELERY_BROKER_URL: "redis://redis:6379/0"
+      CELERY_RESULT_BACKEND: "redis://redis:6379/0"
+      AI_SERVICE_URL: "http://ai_service:8001"
+      AI_INTERNAL_TOKEN: ${AI_INTERNAL_TOKEN:-}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
+      JWT_ACCESS_TOKEN_MINUTES: ${JWT_ACCESS_TOKEN_MINUTES:-30}
+      JWT_REFRESH_TOKEN_DAYS: ${JWT_REFRESH_TOKEN_DAYS:-7}
+      AI_SERVICE_READ_TIMEOUT: ${AI_SERVICE_READ_TIMEOUT:-120}
+      AI_SERVICE_LLM_READ_TIMEOUT: ${AI_SERVICE_LLM_READ_TIMEOUT:-600}
+      DB_CONN_MAX_AGE: ${DB_CONN_MAX_AGE:-60}
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - media_data:/app/media
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      # The API must not wait for the AI models: login, uploads and the
+      # admin dashboard have to work while the models are still loading.
+      ai_service:
+        condition: service_started
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health/', timeout=5)"
+      interval: 20s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+    command:
+      - /bin/sh
+      - -c
+      - >-
+        python manage.py migrate --noinput &&
+        gunicorn config.wsgi:application
+        --bind 0.0.0.0:8000
+        --workers ${GUNICORN_WORKERS:-2}
+        --worker-class gthread
+        --threads ${GUNICORN_THREADS:-8}
+        --timeout 300
+        --graceful-timeout 30
+        --access-logfile -
+        --error-logfile -
+
+  celery_worker:
+    image: enterprise-rag-django:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DJANGO_DEBUG: "False"
+      DJANGO_ALLOWED_HOSTS: "localhost,127.0.0.1,django"
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      REDIS_CACHE_URL: "redis://redis:6379/1"
+      CELERY_BROKER_URL: "redis://redis:6379/0"
+      CELERY_RESULT_BACKEND: "redis://redis:6379/0"
+      AI_SERVICE_URL: "http://ai_service:8001"
+      AI_INTERNAL_TOKEN: ${AI_INTERNAL_TOKEN:-}
+      AI_SERVICE_READ_TIMEOUT: ${AI_SERVICE_READ_TIMEOUT:-120}
     volumes:
       - media_data:/app/media
     depends_on:
@@ -118,17 +211,14 @@ services:
       redis:
         condition: service_healthy
       ai_service:
-        condition: service_healthy
+        condition: service_started
     command:
-      - /bin/sh
-      - -c
-      - >-
-        python manage.py migrate --noinput &&
-        gunicorn config.wsgi:application
-        --bind 0.0.0.0:8000
-        --workers 2
-        --access-logfile -
-        --error-logfile -
+      - celery
+      - -A
+      - config
+      - worker
+      - --loglevel=info
+      - --concurrency=1
 
 volumes:
   postgres_data:
@@ -136,3 +226,4 @@ volumes:
   media_data:
   ai_model_cache:
   ollama_data:
+  eval_reports:

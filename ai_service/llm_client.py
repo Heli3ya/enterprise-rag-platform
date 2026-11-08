@@ -53,13 +53,82 @@ class LLMClient:
 
         return f"{self.base_url}/chat/completions"
 
+    def check_available(self, timeout: int = 5) -> None:
+        """
+        Verify that the configured LLM endpoint is reachable.
+
+        This is called before a streaming response is started, so an
+        unreachable LLM is reported as a proper HTTP error instead of a
+        broken stream.
+        """
+
+        if self.provider == "ollama":
+            url = f"{self.base_url}/tags"
+        else:
+            url = f"{self.base_url}/models"
+
+        try:
+            response = requests.get(
+                url,
+                headers=self._headers(),
+                timeout=timeout,
+            )
+            response.raise_for_status()
+
+        except requests.exceptions.Timeout as exc:
+            raise RuntimeError(
+                "LLM service did not answer in time"
+            ) from exc
+        except requests.exceptions.ConnectionError as exc:
+            raise RuntimeError(
+                f"LLM service is unavailable at {self.base_url}"
+            ) from exc
+        except requests.exceptions.HTTPError as exc:
+            raise RuntimeError(
+                f"LLM API returned HTTP {exc.response.status_code}"
+            ) from exc
+
     def generate(self, prompt: str) -> str:
+        return self.generate_with_options(prompt)
+
+    def generate_with_options(
+        self,
+        prompt: str,
+        *,
+        temperature=None,
+        max_tokens=None,
+        timeout=None,
+        seed=None,
+    ) -> str:
+        """
+        Single-shot completion with explicit decoding options.
+
+        ``generate`` is a thin wrapper around this method; the extra
+        parameters are only sent when they are provided, so the payload
+        for the chat endpoint stays byte-for-byte identical.
+        """
+
         if self.provider == "ollama":
             payload = {
                 "model": self.model,
                 "prompt": prompt,
                 "stream": False,
             }
+
+            options = {}
+
+            if temperature is not None:
+                options["temperature"] = float(temperature)
+
+            if max_tokens is not None:
+                options["num_predict"] = int(max_tokens)
+
+            if seed is not None:
+                options["seed"] = int(seed)
+
+            if options:
+                payload["options"] = options
+
         else:
             payload = {
                 "model": self.model,
@@ -69,12 +138,21 @@ class LLMClient:
                 "stream": False,
             }
 
+            if temperature is not None:
+                payload["temperature"] = float(temperature)
+
+            if max_tokens is not None:
+                payload["max_tokens"] = int(max_tokens)
+
+            if seed is not None:
+                payload["seed"] = int(seed)
+
         try:
             response = requests.post(
                 self._url("generate"),
                 json=payload,
                 headers=self._headers(),
-                timeout=60,
+                timeout=timeout or 60,
             )
             response.raise_for_status()
 
@@ -106,13 +184,31 @@ class LLMClient:
 
         return answer
 
-    def stream(self, prompt: str):
+    def stream(self, prompt: str, *, max_tokens=None, temperature=None):
+        """
+        Stream a completion token by token.
+
+        `max_tokens` bounds the answer length: on a CPU-only host an
+        unbounded answer can stream for minutes, so the caller caps it.
+        """
+
         if self.provider == "ollama":
             payload = {
                 "model": self.model,
                 "prompt": prompt,
                 "stream": True,
             }
+
+            options = {}
+
+            if temperature is not None:
+                options["temperature"] = float(temperature)
+
+            if max_tokens is not None:
+                options["num_predict"] = int(max_tokens)
+
+            if options:
+                payload["options"] = options
         else:
             payload = {
                 "model": self.model,
@@ -122,19 +218,31 @@ class LLMClient:
                 "stream": True,
             }
 
+            if temperature is not None:
+                payload["temperature"] = float(temperature)
+
+            if max_tokens is not None:
+                payload["max_tokens"] = int(max_tokens)
+
         try:
             with requests.post(
                 self._url("generate"),
                 json=payload,
                 headers=self._headers(),
                 stream=True,
-                timeout=120,
+                timeout=(10, 360),
             ) as response:
                 response.raise_for_status()
 
-                for line in response.iter_lines(decode_unicode=True):
+                for line in response.iter_lines(decode_unicode=False):
                     if not line:
                         continue
+
+                    # Decode explicitly as UTF-8. requests guesses
+                    # ISO-8859-1 when the server omits the charset,
+                    # which corrupts Persian/Arabic text.
+                    if isinstance(line, bytes):
+                        line = line.decode("utf-8", errors="replace")
 
                     if self.provider == "ollama":
                         data = json.loads(line)
@@ -146,9 +254,6 @@ class LLMClient:
                         if data.get("done", False):
                             break
                     else:
-                        if isinstance(line, bytes):
-                            line = line.decode("utf-8")
-
                         if not line.startswith("data:"):
                             continue
 

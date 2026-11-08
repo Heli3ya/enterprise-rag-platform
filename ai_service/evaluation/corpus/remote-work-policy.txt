@@ -1,0 +1,112 @@
+Acme Corporation — People Operations
+Policy: Remote and Hybrid Work
+Policy owner: VP of People
+Effective: 1 January 2026
+Document code: HR-RW-003
+
+1. PURPOSE
+
+This policy explains who may work remotely, the expectations that apply to
+remote work, and the equipment and allowances the company provides.
+
+2. ELIGIBILITY
+
+2.1 An employee becomes eligible for remote work after 6 months of
+continuous employment.
+
+2.2 The employee must have received a performance rating of "meets
+expectations" or higher in the most recent review cycle.
+
+2.3 Employees on a formal performance improvement plan are not eligible
+until the plan is closed.
+
+3. WORK MODELS
+
+3.1 The default arrangement is hybrid: 3 days per week in the office and 2
+days per week remote.
+
+3.2 The specific in-office days are agreed with the line manager and must
+include at least one day that overlaps with the rest of the team.
+
+3.3 Fully remote work requires approval from both the Vice President of the
+department and the department head.
+
+3.4 Fully remote arrangements are reviewed every 12 months.
+
+4. WORKING HOURS
+
+4.1 Core collaboration hours are 10:00 to 15:00 in the employee's local
+time zone. Meetings should be scheduled inside this window whenever
+possible.
+
+4.2 Outside core hours, employees may arrange their schedule to suit their
+personal circumstances, provided that weekly deliverables are met.
+
+4.3 Employees must keep their calendar and their status indicator up to
+date while working remotely.
+
+5. EQUIPMENT AND ALLOWANCES
+
+5.1 The company provides a laptop and a headset to every remote employee.
+
+5.2 A one-time home office equipment allowance of 500 USD is available for
+a desk, a chair and a monitor. Receipts must be submitted within 60 days.
+
+5.3 An annual refresh allowance of 250 USD is available after the first
+year.
+
+5.4 A monthly internet allowance of 50 USD is paid with the regular salary.
+
+5.5 Equipment purchased with the allowance remains company property and
+must be returned when employment ends.
+
+6. WORKSPACE REQUIREMENTS
+
+6.1 The remote workspace must be private, lockable and free from
+interruptions during core hours.
+
+6.2 A home safety checklist must be completed before the first remote day.
+
+6.3 Confidential conversations must not take place in public spaces.
+
+7. SECURITY
+
+7.1 Company data must only be accessed from a company-managed device.
+
+7.2 The corporate VPN is mandatory when working from public or untrusted
+networks.
+
+7.3 Screens must be locked whenever the employee steps away from the
+device.
+
+8. CROSS-BORDER WORK
+
+8.1 Employees may work from another country for a maximum of 20 business
+days per calendar year.
+
+8.2 Any cross-border work requires a tax and payroll review before travel,
+which takes up to 15 business days.
+
+8.3 Work from a country subject to international sanctions is not
+permitted.
+
+9. MEETING ETIQUETTE
+
+9.1 Cameras must be switched on for external meetings and for customer
+calls.
+
+9.2 Cameras are optional for internal team meetings.
+
+9.3 Meeting recordings require the consent of all participants.
+
+10. PERFORMANCE AND REVIEW
+
+10.1 Remote employees are assessed on outcomes and deliverables, not on
+hours online.
+
+10.2 Line managers hold a one-to-one meeting at least every 2 weeks with
+each remote team member.
+
+11. CONTACT
+
+Questions about this policy should be sent to people@acme.example.

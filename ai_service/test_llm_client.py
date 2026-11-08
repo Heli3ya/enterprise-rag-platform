@@ -115,7 +115,7 @@ def test_ollama_stream(mock_env):
     assert result == "Hello world"
     assert post.call_args.kwargs["json"]["stream"] is True
     assert post.call_args.kwargs["stream"] is True
-    assert post.call_args.kwargs["timeout"] == 120
+    assert post.call_args.kwargs["timeout"] == (10, 360)
 
 
 def test_openai_compatible_stream(mock_env, monkeypatch):
@@ -234,3 +234,49 @@ def test_generate_stream_alias(mock_env):
         result = "".join(client.generate_stream("test"))
 
     assert result == "Hello"
+
+
+def test_check_available_uses_tags_endpoint_for_ollama(mock_env):
+    response = make_response({"models": []})
+
+    with patch("requests.get", return_value=response) as get:
+        LLMClient().check_available()
+
+    assert get.call_args.args[0] == "http://localhost:11434/api/tags"
+
+
+def test_check_available_uses_models_endpoint_for_openai(mock_env, monkeypatch):
+    monkeypatch.setenv("LLM_PROVIDER", "openai_compatible")
+    monkeypatch.setenv("LLM_BASE_URL", "http://localhost:8000/v1")
+
+    response = make_response({"data": []})
+
+    with patch("requests.get", return_value=response) as get:
+        LLMClient().check_available()
+
+    assert get.call_args.args[0] == "http://localhost:8000/v1/models"
+
+
+def test_check_available_raises_when_llm_is_unreachable(mock_env):
+    with patch(
+        "requests.get",
+        side_effect=requests.exceptions.ConnectionError("down"),
+    ):
+        with pytest.raises(RuntimeError, match="unavailable"):
+            LLMClient().check_available()
+
+
+def test_ollama_stream_decodes_utf8_text(mock_env):
+    response = make_response({})
+    response.iter_lines.return_value = [
+        json.dumps(
+            {"response": "سلام دنیا", "done": True},
+            ensure_ascii=False,
+        ).encode("utf-8"),
+    ]
+
+    with patch("requests.post", return_value=response):
+        client = LLMClient()
+        result = "".join(client.stream("test"))
+
+    assert result == "سلام دنیا"

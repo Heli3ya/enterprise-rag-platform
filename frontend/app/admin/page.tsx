@@ -15,6 +15,7 @@ import {
 	YAxis,
 } from "recharts";
 import api from "../../lib/api";
+import { useT } from "../../components/PreferencesProvider";
 
 type DepartmentStat = {
 	department_id: number;
@@ -70,6 +71,7 @@ function formatDate(value: string): string {
 
 export default function AdminDashboardPage() {
 	const router = useRouter();
+	const t = useT();
 	const [analytics, setAnalytics] = useState<Analytics | null>(null);
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState("");
@@ -95,7 +97,7 @@ export default function AdminDashboardPage() {
 				console.error("Failed to load admin dashboard:", err);
 
 				if (active) {
-					setError("Could not load dashboard data. Please try again.");
+					setError(t("Could not load dashboard data. Please try again."));
 				}
 			} finally {
 				if (active) {
@@ -113,26 +115,28 @@ export default function AdminDashboardPage() {
 
 	if (loading) {
 		return (
-			<main className="flex min-h-screen items-center justify-center bg-gray-50">
-				<p className="text-gray-600">Loading dashboard...</p>
+			<main className="flex min-h-[calc(100vh-3.5rem)] items-center justify-center bg-gray-50">
+				<p className="text-gray-600">{t("Loading dashboard...")}</p>
 			</main>
 		);
 	}
 
 	if (error || !analytics) {
 		return (
-			<main className="min-h-screen bg-gray-50 p-6">
+			<main className="min-h-[calc(100vh-3.5rem)] bg-gray-50 p-6">
 				<div className="mx-auto max-w-6xl rounded-xl bg-white p-6 shadow-sm">
-					<h1 className="text-xl font-bold text-gray-800">Admin Dashboard</h1>
+					<h1 className="text-xl font-bold text-gray-800">
+						{t("Admin Dashboard")}
+					</h1>
 					<p className="mt-3 text-red-600">
-						{error || "No dashboard data is available."}
+						{error || t("No dashboard data is available.")}
 					</p>
 					<button
 						type="button"
 						onClick={() => window.location.reload()}
 						className="mt-4 rounded-lg bg-blue-600 px-4 py-2 text-white hover:bg-blue-700"
 					>
-						Retry
+						{t("Retry")}
 					</button>
 				</div>
 			</main>
@@ -140,18 +144,18 @@ export default function AdminDashboardPage() {
 	}
 
 	return (
-		<main className="min-h-screen bg-gray-50 p-4 sm:p-8">
+		<main className="min-h-[calc(100vh-3.5rem)] bg-gray-50 p-4 sm:p-8">
 			<div className="mx-auto max-w-7xl space-y-8">
 				<header className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
 					<div>
 						<p className="text-sm font-medium text-blue-600">
-							ENTERPRISE RAG PLATFORM
+							{t("Enterprise RAG Platform")}
 						</p>
 						<h1 className="mt-1 text-3xl font-bold text-gray-900">
-							Admin Dashboard
+							{t("Admin Dashboard")}
 						</h1>
 						<p className="mt-2 text-gray-500">
-							Document usage and search activity
+							{t("Document usage and search activity")}
 						</p>
 					</div>
 
@@ -160,27 +164,27 @@ export default function AdminDashboardPage() {
 						onClick={() => router.push("/")}
 						className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100"
 					>
-						Back to workspace
+						{t("Back to workspace")}
 					</button>
 				</header>
 
 				<section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
 					<article className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-						<p className="text-sm text-gray-500">Total documents</p>
+						<p className="text-sm text-gray-500">{t("Total documents")}</p>
 						<p className="mt-3 text-3xl font-bold text-gray-900">
 							{analytics.total_documents.toLocaleString()}
 						</p>
 					</article>
 
 					<article className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-						<p className="text-sm text-gray-500">Total file volume</p>
+						<p className="text-sm text-gray-500">{t("Total file volume")}</p>
 						<p className="mt-3 text-3xl font-bold text-gray-900">
 							{formatBytes(analytics.total_file_size_bytes)}
 						</p>
 					</article>
 
 					<article className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-						<p className="text-sm text-gray-500">Total searches</p>
+						<p className="text-sm text-gray-500">{t("Total searches")}</p>
 						<p className="mt-3 text-3xl font-bold text-gray-900">
 							{analytics.total_searches.toLocaleString()}
 						</p>
@@ -190,10 +194,10 @@ export default function AdminDashboardPage() {
 				<section className="grid grid-cols-1 gap-6 xl:grid-cols-2">
 					<article className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
 						<h2 className="text-lg font-semibold text-gray-800">
-							Documents by department
+							{t("Documents by department")}
 						</h2>
 						<p className="mt-1 text-sm text-gray-500">
-							Number of uploaded documents in each department
+							{t("Number of uploaded documents in each department")}
 						</p>
 
 						<div className="mt-5 h-80 w-full">
@@ -214,7 +218,7 @@ export default function AdminDashboardPage() {
 										<Tooltip />
 										<Bar
 											dataKey="document_count"
-											name="Documents"
+											name={t("Documents")}
 											fill="#2563eb"
 											radius={[5, 5, 0, 0]}
 										/>
@@ -222,7 +226,7 @@ export default function AdminDashboardPage() {
 								</ResponsiveContainer>
 							) : (
 								<p className="pt-12 text-center text-gray-500">
-									No department data available.
+									{t("No department data available.")}
 								</p>
 							)}
 						</div>
@@ -230,10 +234,10 @@ export default function AdminDashboardPage() {
 
 					<article className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
 						<h2 className="text-lg font-semibold text-gray-800">
-							Searches by department
+							{t("Searches by department")}
 						</h2>
 						<p className="mt-1 text-sm text-gray-500">
-							Share of recorded searches by department
+							{t("Share of recorded searches by department")}
 						</p>
 
 						<div className="mt-5 h-80 w-full">
@@ -267,7 +271,7 @@ export default function AdminDashboardPage() {
 								</ResponsiveContainer>
 							) : (
 								<p className="pt-12 text-center text-gray-500">
-									No recorded searches by department yet.
+									{t("No recorded searches by department yet.")}
 								</p>
 							)}
 						</div>
@@ -277,22 +281,28 @@ export default function AdminDashboardPage() {
 				<section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
 					<div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
 						<h2 className="text-lg font-semibold text-gray-800">
-							Recent searches
+							{t("Recent searches")}
 						</h2>
 						<span className="text-sm text-gray-500">
-							Latest {analytics.recent_searches.length} records
+							{t("Latest {count} records", {
+								count: analytics.recent_searches.length,
+							})}
 						</span>
 					</div>
 
 					{analytics.recent_searches.length > 0 ? (
 						<div className="mt-4 overflow-x-auto">
-							<table className="w-full min-w-[650px] text-left text-sm">
+							<table className="w-full min-w-[650px] text-start text-sm">
 								<thead>
 									<tr className="border-b border-gray-200 text-gray-500">
-										<th className="px-3 py-3 font-medium">User</th>
-										<th className="px-3 py-3 font-medium">Department</th>
-										<th className="px-3 py-3 font-medium">Search query</th>
-										<th className="px-3 py-3 font-medium">Date</th>
+										<th className="px-3 py-3 font-medium">{t("User")}</th>
+										<th className="px-3 py-3 font-medium">
+											{t("Department")}
+										</th>
+										<th className="px-3 py-3 font-medium">
+											{t("Search query")}
+										</th>
+										<th className="px-3 py-3 font-medium">{t("Date")}</th>
 									</tr>
 								</thead>
 								<tbody>
@@ -320,7 +330,7 @@ export default function AdminDashboardPage() {
 						</div>
 					) : (
 						<p className="mt-4 text-sm text-gray-500">
-							No search history is available yet.
+							{t("No search history is available yet.")}
 						</p>
 					)}
 				</section>

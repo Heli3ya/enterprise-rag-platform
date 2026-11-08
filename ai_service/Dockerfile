@@ -24,7 +24,11 @@ RUN python -m pip install --upgrade pip \
 
 COPY --chown=app:app . .
 
-RUN mkdir -p /app/.cache/huggingface \
+# The reports directory must exist in the image: Docker initialises a
+# named volume from the image path, and an existing directory keeps this
+# ownership. Without it the volume is created as root and the service
+# (running as `app`) cannot write its reports.
+RUN mkdir -p /app/.cache/huggingface /app/evaluation/reports \
     && chown -R app:app /app
 
 USER app

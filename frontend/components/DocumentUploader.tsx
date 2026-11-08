@@ -9,6 +9,7 @@ import {
 	useState,
 } from "react";
 import api from "@/lib/api";
+import { useT } from "./PreferencesProvider";
 
 type Department = {
 	id: number;
@@ -132,6 +133,7 @@ function isAllowedFile(file: File): boolean {
 }
 
 export default function DocumentUploader() {
+	const t = useT();
 	const fileInputRef = useRef<HTMLInputElement>(null);
 
 	const [departments, setDepartments] = useState<Department[]>([]);
@@ -203,7 +205,7 @@ export default function DocumentUploader() {
 
 		if (!isAllowedFile(file)) {
 			setSelectedFile(null);
-			setError("Only PDF, Word (.doc/.docx), and TXT files are allowed.");
+			setError(t("Only PDF, Word (.doc/.docx), and TXT files are allowed."));
 
 			if (fileInputRef.current) {
 				fileInputRef.current.value = "";
@@ -256,19 +258,19 @@ export default function DocumentUploader() {
 		setSuccess("");
 
 		if (!selectedFile) {
-			setError("Please select a file before uploading.");
+			setError(t("Please select a file before uploading."));
 			return;
 		}
 
 		if (!selectedDepartment) {
-			setError("Please select a department.");
+			setError(t("Please select a department."));
 			return;
 		}
 
 		const documentTitle = title.trim();
 
 		if (!documentTitle) {
-			setError("Please enter a document title.");
+			setError(t("Please enter a document title."));
 			return;
 		}
 
@@ -292,7 +294,7 @@ export default function DocumentUploader() {
 			});
 
 			setUploadProgress(100);
-			setSuccess("Document uploaded successfully.");
+			setSuccess(t("Document uploaded successfully."));
 			setSelectedFile(null);
 			setTitle("");
 
@@ -310,7 +312,7 @@ export default function DocumentUploader() {
 
 	const handleDelete = async (documentId: number) => {
 		const confirmed = window.confirm(
-			"Are you sure you want to delete this document?",
+			t("Are you sure you want to delete this document?"),
 		);
 
 		if (!confirmed) {
@@ -323,7 +325,7 @@ export default function DocumentUploader() {
 
 		try {
 			await api.delete(`/documents/${documentId}/delete/`);
-			setSuccess("Document deleted successfully.");
+			setSuccess(t("Document deleted successfully."));
 			await fetchDocuments();
 		} catch (err: unknown) {
 			setError(`Failed to delete document: ${getErrorMessage(err)}`);
@@ -335,7 +337,9 @@ export default function DocumentUploader() {
 	return (
 		<section className="space-y-8 rounded-xl bg-white p-6 shadow-sm">
 			<div>
-				<h2 className="text-xl font-semibold text-gray-900">Upload Document</h2>
+				<h2 className="text-xl font-semibold text-gray-900">
+				{t("Upload Document")}
+			</h2>
 				<p className="mt-1 text-sm text-gray-500">
 					Upload a PDF, Word, or TXT document and assign it to a department.
 				</p>
@@ -372,7 +376,7 @@ export default function DocumentUploader() {
 						type="text"
 						value={title}
 						onChange={(event) => setTitle(event.target.value)}
-						placeholder="Enter document title"
+						placeholder={t("Enter document title")}
 						disabled={isUploading}
 						className="w-full rounded-lg border border-gray-300 px-4 py-2 text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 disabled:bg-gray-100"
 					/>
@@ -394,8 +398,8 @@ export default function DocumentUploader() {
 					>
 						<option value="">
 							{isLoadingDepartments
-								? "Loading departments..."
-								: "Select a department"}
+								? t("Loading departments...")
+								: t("Select a department")}
 						</option>
 
 						{departments.map((department) => (
@@ -420,7 +424,7 @@ export default function DocumentUploader() {
 						onChange={handleInputChange}
 						disabled={isUploading}
 						className="sr-only"
-						aria-label="Choose a document file"
+						aria-label={t("Choose a document file")}
 					/>
 
 					<button
@@ -454,7 +458,9 @@ export default function DocumentUploader() {
 				{selectedFile && (
 					<div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-blue-200 bg-blue-50 p-4">
 						<div className="min-w-0">
-							<p className="text-sm font-medium text-gray-800">Selected file</p>
+							<p className="text-sm font-medium text-gray-800">
+								{t("Selected file")}
+							</p>
 							<p className="break-all text-sm text-gray-600">
 								{selectedFile.name}
 							</p>
@@ -477,14 +483,14 @@ export default function DocumentUploader() {
 				{isUploading && (
 					<div>
 						<div className="mb-2 flex justify-between text-sm text-gray-600">
-							<span>Uploading...</span>
+							<span>{t("Uploading...")}</span>
 							<span>{uploadProgress}%</span>
 						</div>
 
 						<div
 							className="h-2.5 w-full overflow-hidden rounded-full bg-gray-200"
 							role="progressbar"
-							aria-label="Upload progress"
+							aria-label={t("Upload progress")}
 							aria-valuemin={0}
 							aria-valuemax={100}
 							aria-valuenow={uploadProgress}
@@ -509,7 +515,7 @@ export default function DocumentUploader() {
 					}
 					className="w-full rounded-lg bg-blue-600 px-5 py-3 font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-400"
 				>
-					{isUploading ? "Uploading..." : "Upload Document"}
+					{isUploading ? t("Uploading...") : t("Upload Document")}
 				</button>
 			</div>
 
@@ -530,7 +536,7 @@ export default function DocumentUploader() {
 						disabled={isLoadingDocuments}
 						className="rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
 					>
-						{isLoadingDocuments ? "Refreshing..." : "Refresh"}
+						{isLoadingDocuments ? t("Refreshing...") : t("Refresh")}
 					</button>
 				</div>
 
@@ -606,7 +612,7 @@ export default function DocumentUploader() {
 																: "bg-amber-100 text-amber-700"
 													}`}
 												>
-													{status}
+													{t(status)}
 												</span>
 											</td>
 
@@ -622,8 +628,8 @@ export default function DocumentUploader() {
 													className="rounded-md px-2 py-1 text-sm font-medium text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
 												>
 													{deletingId === document.id
-														? "Deleting..."
-														: "Delete"}
+									? t("Deleting...")
+										: t("Delete")}
 												</button>
 											</td>
 										</tr>

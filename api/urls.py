@@ -1,8 +1,9 @@
 from django.urls import path
 from rest_framework_simplejwt.views import (
-    TokenObtainPairView,
     TokenRefreshView,
 )
+
+from accounts.views import LoginView
 
 from .views import (
     create_embeddings,
@@ -13,10 +14,12 @@ from .views import (
     audit_logs_view,
     admin_analytics_view,
     current_user_view,
+    health_view,
 )
 
 urlpatterns = [
-    path("auth/login/", TokenObtainPairView.as_view(), name="token_obtain_pair"),
+    path("health/", health_view, name="health"),
+    path("auth/login/", LoginView.as_view(), name="token_obtain_pair"),
     path("auth/refresh/", TokenRefreshView.as_view(), name="token_refresh"),
     path("auth/me/", current_user_view, name="current_user"),
     path("embeddings/create/", create_embeddings, name="create_embeddings"),

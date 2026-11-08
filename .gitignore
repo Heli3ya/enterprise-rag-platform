@@ -28,6 +28,16 @@ frontend/.env.local
 # Test coverage
 .coverage
 htmlcov/
+
+# RAG evaluation reports (generated at runtime)
+ai_service/evaluation/reports/
+# Local database dumps: they contain real users and password hashes
+enterprise_rag_db_*.sql
+# Agent workspace data
+.workbuddy-ai/
+# Playwright artifacts
+frontend/test-results/
+frontend/playwright-report/
 # Temporary review and recovery files
 *.bak
 *.tmp

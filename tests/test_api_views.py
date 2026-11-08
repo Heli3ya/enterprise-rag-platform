@@ -170,7 +170,11 @@ def test_semantic_search_returns_results_from_chunk_object(admin_client):
             }
         ],
     }
-    search.assert_called_once_with("annual leave", limit=5)
+    search.assert_called_once_with(
+        "annual leave",
+        limit=5,
+        user=admin_client.handler._force_user,
+    )
 
 
 @pytest.mark.django_db
@@ -278,29 +282,44 @@ def test_search_query_saves_valid_results(admin_client):
 
 
 @pytest.mark.django_db
-def test_search_query_filters_results_with_nonpositive_rerank_score(
+def test_search_query_keeps_negative_rerank_scores_and_drops_unscored(
     admin_client,
 ):
+    """
+    Cross-encoder scores are raw logits, so valid matches are often
+    negative. Only results the reranker did not score may be dropped.
+    """
+    from api.services import MISSING_RERANK_SCORE
     from documents.models import QueryResult, SearchQuery
 
     chunk = make_chunk_for_admin(admin_client)
     chunk.document.is_public = True
     chunk.document.save(update_fields=["is_public"])
 
-    result = {
-        "chunk_id": chunk.id,
-        "rerank_score": 0,
-        "content": chunk.content,
-        "result": SimpleNamespace(
-            chunk=SimpleNamespace(
-                document_id=chunk.document_id,
-                document=chunk.document,
-            )
-        ),
-    }
+    unscored_chunk = make_chunk_for_admin(admin_client)
+    unscored_chunk.document.is_public = True
+    unscored_chunk.document.save(update_fields=["is_public"])
+
+    def build_result(target_chunk, score):
+        return {
+            "chunk_id": target_chunk.id,
+            "rerank_score": score,
+            "content": target_chunk.content,
+            "result": SimpleNamespace(
+                chunk=SimpleNamespace(
+                    document_id=target_chunk.document_id,
+                    document=target_chunk.document,
+                )
+            ),
+        }
+
+    results = [
+        build_result(chunk, -4.82),
+        build_result(unscored_chunk, MISSING_RERANK_SCORE),
+    ]
 
     with (
-        patch("api.views.hybrid_search", return_value=[result]),
+        patch("api.views.hybrid_search", return_value=results),
         patch("api.views.create_audit_log"),
     ):
         response = admin_client.post(
@@ -310,10 +329,14 @@ def test_search_query_filters_results_with_nonpositive_rerank_score(
         )
 
     assert response.status_code == 200
-    assert response.json()["results"] == []
+
+    payload = response.json()["results"]
+
+    assert [item["chunk_id"] for item in payload] == [chunk.id]
+    assert payload[0]["score"] == -4.82
 
     saved_query = SearchQuery.objects.get(query_text="annual leave")
-    assert not QueryResult.objects.filter(query=saved_query).exists()
+    assert QueryResult.objects.filter(query=saved_query).count() == 1
 
 
 @pytest.mark.django_db

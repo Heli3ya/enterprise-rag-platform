@@ -1,8 +1,11 @@
 ﻿
 import json
 
+import requests
+from django.conf import settings
 from django.db import models, transaction
 from django.db.models import Sum, Count
+from django.db import connection as db_connection
 from django.http import StreamingHttpResponse
 from django.utils.dateparse import parse_date
 
@@ -12,7 +15,7 @@ from rest_framework.decorators import (
     throttle_classes,
     permission_classes,
 )
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
 from drf_spectacular.utils import extend_schema, OpenApiResponse
@@ -20,6 +23,9 @@ from drf_spectacular.utils import extend_schema, OpenApiResponse
 from .throttles import ChatUserRateThrottle
 from .permissions import IsAdminUser
 from .services import (
+    MISSING_RERANK_SCORE,
+    AIServiceError,
+    AIServiceUnavailable,
     generate_embeddings,
     hybrid_search,
     generate_rag_answer,
@@ -68,6 +74,61 @@ def _tenant_required_response(request):
         )
 
     return None
+
+
+def _department_required_response(request):
+    """
+    Reject search requests from users without a department.
+
+    Without a department there is no document scope, so the search would
+    silently return an empty result set. A clear error is much easier to
+    act on.
+    """
+
+    if getattr(request.user, "department_id", None) is None:
+        return Response(
+            {
+                "detail": (
+                    "Your account is not assigned to a department. "
+                    "Ask an administrator to assign one before searching."
+                )
+            },
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    return None
+
+
+def _ai_service_error_response(exc, fallback_message):
+    """
+    Translate AI service failures into a clear HTTP response.
+
+    A missing AI service is a temporary condition, so it is reported as
+    503 instead of a generic 500.
+    """
+
+    if isinstance(exc, AIServiceUnavailable):
+        return Response(
+            {
+                "error": (
+                    "The AI service is not available right now. "
+                    "Please try again in a moment."
+                ),
+                "detail": str(exc),
+            },
+            status=status.HTTP_503_SERVICE_UNAVAILABLE,
+        )
+
+    if isinstance(exc, AIServiceError):
+        return Response(
+            {"error": str(exc) or fallback_message},
+            status=status.HTTP_502_BAD_GATEWAY,
+        )
+
+    return Response(
+        {"error": str(exc) or fallback_message},
+        status=status.HTTP_502_BAD_GATEWAY,
+    )
 
 
 def _filter_tenant_search_results(results, request):
@@ -172,6 +233,12 @@ def create_embeddings(request):
     created_embeddings = []
 
     with transaction.atomic():
+        # Replace any previous embedding for these chunks, otherwise the
+        # vector search would return the same chunk several times.
+        Embedding.objects.filter(
+            chunk_id__in=[chunk.id for chunk in chunks],
+        ).delete()
+
         for chunk, vector in zip(chunks, embeddings):
             embedding = Embedding.objects.create(
                 chunk=chunk,
@@ -219,13 +286,21 @@ def semantic_search_view(request):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
+    department_error = _department_required_response(request)
+    if department_error:
+        return department_error
+
     try:
         # Database ownership is verified below before any result is returned.
-        results = hybrid_search(query, limit=5)
+        results = hybrid_search(
+            query,
+            limit=5,
+            user=request.user,
+        )
     except Exception as exc:
-        return Response(
-            {"error": str(exc) or "Search service unavailable"},
-            status=status.HTTP_502_BAD_GATEWAY,
+        return _ai_service_error_response(
+            exc,
+            "Search service unavailable",
         )
 
     results = _filter_tenant_search_results(results, request)
@@ -272,6 +347,10 @@ def search_query_view(request):
     query_text = serializer.validated_data["query_text"]
     top_k = serializer.validated_data["top_k"]
 
+    department_error = _department_required_response(request)
+    if department_error:
+        return department_error
+
     try:
         results = hybrid_search(
             query_text,
@@ -279,17 +358,20 @@ def search_query_view(request):
             user=request.user,
         )
     except Exception as exc:
-        return Response(
-            {"error": str(exc) or "Search service unavailable"},
-            status=status.HTTP_502_BAD_GATEWAY,
+        return _ai_service_error_response(
+            exc,
+            "Search service unavailable",
         )
 
     results = _filter_tenant_search_results(results, request)
 
+    # Keep every result the reranker actually scored. Cross-encoder
+    # scores are raw logits and are often negative for valid matches, so
+    # filtering on "> 0" used to drop every result.
     results = [
         result
         for result in results
-        if float(result.get("rerank_score", 0)) > 0
+        if result.get("rerank_score") != MISSING_RERANK_SCORE
     ]
 
     with transaction.atomic():
@@ -355,6 +437,10 @@ def rag_query_view(request):
     query_text = serializer.validated_data["query_text"]
     top_k = serializer.validated_data["top_k"]
 
+    department_error = _department_required_response(request)
+    if department_error:
+        return department_error
+
     try:
         result = generate_rag_answer(
             query_text,
@@ -362,9 +448,9 @@ def rag_query_view(request):
             user=request.user,
         )
     except Exception as exc:
-        return Response(
-            {"error": str(exc) or "RAG service unavailable"},
-            status=status.HTTP_502_BAD_GATEWAY,
+        return _ai_service_error_response(
+            exc,
+            "RAG service unavailable",
         )
 
     create_audit_log(request.user, "RAG_QUERY")
@@ -400,6 +486,10 @@ def chat_ask_view(request):
 
     question = serializer.validated_data["question"]
 
+    department_error = _department_required_response(request)
+    if department_error:
+        return department_error
+
     def event_stream():
         try:
             for event in generate_rag_stream(
@@ -433,9 +523,15 @@ def chat_ask_view(request):
                     yield "event: done\ndata: {}\n\n"
 
         except Exception as exc:
-            data = {
-                "error": str(exc) or "RAG service unavailable"
-            }
+            if isinstance(exc, AIServiceUnavailable):
+                message = (
+                    "The AI service is not available right now. "
+                    "Please try again in a moment."
+                )
+            else:
+                message = str(exc) or "RAG service unavailable"
+
+            data = {"error": message}
             yield (
                 "event: error\n"
                 f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
@@ -631,6 +727,70 @@ def current_user_view(request):
             "department_name": (
                 user.department.name if user.department else None
             ),
+            "tenant_id": user.tenant_id,
+            "tenant_name": (
+                user.tenant.name if user.tenant_id else None
+            ),
+        },
+        status=status.HTTP_200_OK,
+    )
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def health_view(request):
+    """
+    Public health endpoint.
+
+    It reports whether the database and the AI inference service are
+    reachable, which makes deployment problems easy to diagnose.
+    """
+
+    database_status = "unknown"
+
+    try:
+        with db_connection.cursor() as cursor:
+            cursor.execute("SELECT 1;")
+            cursor.fetchone()
+
+        database_status = "connected"
+
+    except Exception as exc:
+        database_status = f"error: {exc}"
+
+    ai_status = "unknown"
+    ai_detail = ""
+
+    try:
+        response = requests.get(
+            f"{settings.AI_SERVICE_URL}/health",
+            timeout=(2, 5),
+        )
+        response.raise_for_status()
+
+        payload = response.json()
+        ai_status = "connected"
+        ai_ready = bool(payload.get("ready", True))
+        ai_detail = "models are ready" if ai_ready else "models are still loading"
+
+    except Exception as exc:
+        ai_status = "unavailable"
+        ai_detail = str(exc)
+
+    overall = (
+        "ok"
+        if database_status == "connected" and ai_status == "connected"
+        else "degraded"
+    )
+
+    return Response(
+        {
+            "status": overall,
+            "database": database_status,
+            "ai_service": {
+                "status": ai_status,
+                "detail": ai_detail,
+            },
         },
         status=status.HTTP_200_OK,
     )

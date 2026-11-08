@@ -1,5 +1,8 @@
 ﻿
+import logging
+import os
 import re
+import time
 from types import SimpleNamespace
 
 import requests
@@ -13,24 +16,141 @@ from django.contrib.postgres.search import (
 from documents.models import DocumentChunk
 
 
+logger = logging.getLogger(__name__)
+
+
+# Score assigned to a result the reranker did not score. It sorts last
+# and is JSON serializable (unlike -inf / -Infinity).
+MISSING_RERANK_SCORE = -1e9
+
+
+class AIServiceError(RuntimeError):
+    """The AI inference service returned an error response."""
+
+
+class AIServiceUnavailable(AIServiceError):
+    """The AI inference service could not be reached at all."""
+
+
+def ai_service_post(
+    path,
+    *,
+    json=None,
+    read_timeout=None,
+    stream=False,
+):
+    """
+    Call the AI inference service with sane timeouts and small retries.
+
+    Connection problems are retried because the AI service often needs a
+    moment to load its models. HTTP error responses are not retried,
+    they are surfaced to the caller as AIServiceError.
+    """
+
+    url = f"{settings.AI_SERVICE_URL}{path}"
+    connect_timeout = settings.AI_SERVICE_CONNECT_TIMEOUT
+    read_timeout = read_timeout or settings.AI_SERVICE_READ_TIMEOUT
+    attempts = max(1, settings.AI_SERVICE_MAX_RETRIES)
+
+    # The AI service refuses callers that do not present the shared
+    # secret, so reaching the port is no longer enough to query it.
+    headers = {}
+
+    if settings.AI_INTERNAL_TOKEN:
+        headers["X-Internal-Token"] = settings.AI_INTERNAL_TOKEN
+
+    last_error = None
+
+    for attempt in range(1, attempts + 1):
+        try:
+            response = requests.post(
+                url,
+                json=json,
+                headers=headers or None,
+                timeout=(connect_timeout, read_timeout),
+                stream=stream,
+            )
+            response.raise_for_status()
+
+            return response
+
+        except requests.exceptions.HTTPError as exc:
+            # Response.__bool__ is False for 4xx/5xx, so an explicit
+            # "is not None" check is required here.
+            status_code = (
+                exc.response.status_code
+                if exc.response is not None
+                else "?"
+            )
+
+            detail = ""
+
+            if exc.response is not None:
+                try:
+                    payload = exc.response.json()
+
+                    if isinstance(payload, dict):
+                        raw_detail = (
+                            payload.get("detail")
+                            or payload.get("error")
+                            or ""
+                        )
+                        detail = (
+                            raw_detail
+                            if isinstance(raw_detail, str)
+                            else str(raw_detail)
+                        )
+                except Exception:
+                    try:
+                        detail = exc.response.text[:300]
+                    except Exception:
+                        detail = ""
+
+            message = f"AI service error ({status_code})"
+
+            if detail:
+                message = f"{message}: {detail}"
+
+            raise AIServiceError(message) from exc
+
+        except (
+            requests.exceptions.ConnectionError,
+            requests.exceptions.Timeout,
+        ) as exc:
+            last_error = exc
+
+            logger.warning(
+                "AI service call to %s failed (attempt %s/%s): %s",
+                path,
+                attempt,
+                attempts,
+                exc,
+            )
+
+            if attempt < attempts:
+                time.sleep(
+                    settings.AI_SERVICE_RETRY_BACKOFF * attempt,
+                )
+
+    raise AIServiceUnavailable(
+        f"AI service is unavailable at {settings.AI_SERVICE_URL}. {last_error}"
+    ) from last_error
+
+
 def generate_embeddings(texts):
-    response = requests.post(
-        f"{settings.AI_SERVICE_URL}/api/embed/",
+    response = ai_service_post(
+        "/api/embed/",
         json={"texts": texts},
-        timeout=60,
     )
-    response.raise_for_status()
     data = response.json()
     return data["embeddings"], data["dimension"]
 
 
 def generate_query_embedding(query):
-    response = requests.post(
-        f"{settings.AI_SERVICE_URL}/api/embed/",
+    response = ai_service_post(
+        "/api/embed/",
         json={"texts": [query]},
-        timeout=60,
     )
-    response.raise_for_status()
     data = response.json()
     embeddings = data["embeddings"]
 
@@ -65,17 +185,15 @@ def semantic_search(query, limit=5, user=None):
 
     tenant_id = user.tenant_id
 
-    response = requests.post(
-        f"{settings.AI_SERVICE_URL}/api/vector-search/",
+    response = ai_service_post(
+        "/api/vector-search/",
         json={
             "query": query,
             "tenant_id": tenant_id,
             "allowed_department_ids": [department_id],
             "limit": limit,
         },
-        timeout=60,
     )
-    response.raise_for_status()
     data = response.json()
 
     returned_ids = [
@@ -206,15 +324,13 @@ def rerank_results(query, results):
         for result in results
     ]
 
-    response = requests.post(
-        f"{settings.AI_SERVICE_URL}/api/rerank/",
+    response = ai_service_post(
+        "/api/rerank/",
         json={
             "query": query,
             "results": rerank_contents,
         },
-        timeout=60,
     )
-    response.raise_for_status()
 
     reranked_data = response.json()
 
@@ -227,9 +343,12 @@ def rerank_results(query, results):
 
     for result in results:
         rerank_content = result["content"][:max_content_length]
+        # A missing score must sort last and stay JSON serializable, so a
+        # very small number is used instead of -inf (which would produce
+        # an invalid JSON payload such as -Infinity).
         rerank_score = score_by_content.get(
             rerank_content,
-            float("-inf"),
+            MISSING_RERANK_SCORE,
         )
 
         reranked_results.append(
@@ -335,12 +454,49 @@ def hybrid_search(query, limit=5, user=None):
 
     rerank_candidates = fused_results[:5]
 
-    reranked_results = rerank_results(
-        query,
-        rerank_candidates,
-    )
+    try:
+        reranked_results = rerank_results(
+            query,
+            rerank_candidates,
+        )
+    except AIServiceError as exc:
+        # The reranker is optional (it can be disabled on low memory
+        # machines). Search must keep working, so the hybrid score is
+        # used as the final score in that case.
+        logger.warning(
+            "Reranking unavailable, using hybrid scores instead: %s",
+            exc,
+        )
+
+        reranked_results = [
+            {
+                **item,
+                "rerank_score": item["score"],
+            }
+            for item in rerank_candidates
+        ]
 
     return reranked_results[:limit]
+
+
+# How many characters of each chunk reach the prompt.
+#
+# Prompt processing dominates the answer latency on a CPU-only host
+# (~8 tokens/second with four cores), so the context is capped instead of
+# being sent whole. 700 characters keeps the retrieved passage intact for
+# typical chunks while bounding the worst case.
+RAG_CONTEXT_CHARS = int(os.getenv("RAG_CONTEXT_CHARS", "700"))
+
+
+def _prompt_excerpt(content):
+    """Trim a chunk to the prompt budget, marking the cut."""
+
+    text = (content or "").strip()
+
+    if len(text) <= RAG_CONTEXT_CHARS:
+        return text
+
+    return text[:RAG_CONTEXT_CHARS].rstrip() + " …"
 
 
 def build_rag_prompt(query, results):
@@ -349,7 +505,7 @@ def build_rag_prompt(query, results):
     for result in results:
         context_parts.append(
             f"[{result['chunk_id']}]\n"
-            f"{result['content']}"
+            f"{_prompt_excerpt(result['content'])}"
         )
 
     context = "\n\n".join(context_parts)
@@ -429,13 +585,19 @@ def build_citations(citation_ids, user=None):
         citations.append(
             {
                 "document_id": document.id,
+                "title": document.title,
                 "filename": document.file_path.name,
                 "department": document.department.name,
                 "chunk_id": chunk.id,
+                "chunk_index": chunk.chunk_index,
+                # A short preview lets the UI show the cited passage
+                # immediately, without an extra request.
+                "snippet": chunk.content[:280],
             }
         )
 
     return citations
+
 
 
 def generate_rag_answer(query, limit=5, user=None):
@@ -453,15 +615,14 @@ def generate_rag_answer(query, limit=5, user=None):
 
     prompt = build_rag_prompt(query, results)
 
-    response = requests.post(
-        f"{settings.AI_SERVICE_URL}/api/llm/",
-        json={"prompt": prompt},
-        timeout=120,
+    response = ai_service_post(
+        "/api/llm/",
+        json={"prompt": prompt, "max_tokens": settings.LLM_MAX_TOKENS},
+        read_timeout=settings.AI_SERVICE_LLM_READ_TIMEOUT,
     )
-    response.raise_for_status()
 
     data = response.json()
-    answer = data.get("response")
+    answer = data.get("answer")
 
     if not answer:
         raise RuntimeError("LLM response text is missing")
@@ -492,30 +653,37 @@ def generate_rag_stream(query, limit=5, user=None):
         return
 
     prompt = build_rag_prompt(query, results)
-
-    response = requests.post(
-        f"{settings.AI_SERVICE_URL}/api/llm/stream/",
-        json={"prompt": prompt},
-        stream=True,
-        timeout=120,
-    )
-    response.raise_for_status()
-
     full_answer = ""
 
-    for chunk in response.iter_content(
-        chunk_size=None,
-        decode_unicode=True,
-    ):
-        if not chunk:
-            continue
+    response = ai_service_post(
+        "/api/llm/stream/",
+        json={"prompt": prompt, "max_tokens": settings.LLM_MAX_TOKENS},
+        read_timeout=settings.AI_SERVICE_LLM_READ_TIMEOUT,
+        stream=True,
+    )
 
-        full_answer += chunk
+    with response:
+        for chunk in response.iter_content(
+            chunk_size=None,
+            decode_unicode=False,
+        ):
+            if not chunk:
+                continue
 
-        yield {
-            "type": "token",
-            "content": chunk,
-        }
+            # Decode explicitly: requests may otherwise guess
+            # ISO-8859-1 and corrupt Persian text.
+            if isinstance(chunk, bytes):
+                chunk = chunk.decode("utf-8", errors="replace")
+
+            if not chunk:
+                continue
+
+            full_answer += chunk
+
+            yield {
+                "type": "token",
+                "content": chunk,
+            }
 
     citations = build_citations(
         extract_citation_ids(full_answer),

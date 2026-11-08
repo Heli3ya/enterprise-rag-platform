@@ -1,7 +1,8 @@
 
 from types import SimpleNamespace
-from unittest.mock import Mock, patch
+from unittest.mock import MagicMock, Mock, patch
 
+import math
 import pytest
 
 from api.services import (
@@ -366,7 +367,9 @@ def test_rerank_results_sorts_by_score_and_handles_missing_scores():
     assert [item["chunk_id"] for item in reranked] == [2, 1, 3]
     assert reranked[0]["rerank_score"] == 0.9
     assert reranked[1]["rerank_score"] == 0.2
-    assert reranked[2]["rerank_score"] == float("-inf")
+    # Missing scores must sort last and remain JSON serializable.
+    assert reranked[2]["rerank_score"] == -1e9
+    assert math.isfinite(reranked[2]["rerank_score"])
 
 
 def test_generate_rag_answer_returns_message_when_no_results():
@@ -402,7 +405,7 @@ def test_generate_rag_answer_returns_answer_and_citations():
 
     response = Mock()
     response.json.return_value = {
-        "response": "Employees receive annual leave. [12]"
+        "answer": "Employees receive annual leave. [12]"
     }
 
     with (
@@ -426,7 +429,7 @@ def test_generate_rag_answer_raises_error_when_response_is_missing():
     from api.services import generate_rag_answer
 
     response = Mock()
-    response.json.return_value = {"response": ""}
+    response.json.return_value = {"answer": ""}
 
     with (
         patch(
@@ -464,7 +467,9 @@ def test_generate_rag_stream_returns_error_when_no_results():
 def test_generate_rag_stream_emits_tokens_citations_and_done():
     from api.services import generate_rag_stream
 
-    response = Mock()
+    # MagicMock is required here: generate_rag_stream uses the response
+    # as a context manager to make sure the stream is closed.
+    response = MagicMock()
     response.iter_content.return_value = [
         "Annual leave ",
         "requires approval. [12]",
