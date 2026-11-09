@@ -6,6 +6,7 @@ from django.contrib.auth.hashers import make_password
 from tenants.models import Tenant
 from departments.models import Department
 from documents.models import Document, DocumentChunk
+from api.models import ChatAnswer
 
 
 User = get_user_model()
@@ -77,3 +78,16 @@ class DocumentChunkFactory(factory.django.DjangoModelFactory):
     document = factory.SubFactory(DocumentFactory)
     content = "Sample content for automated integration tests."
     chunk_index = 0
+
+
+class ChatAnswerFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = ChatAnswer
+
+    user = factory.SubFactory(UserFactory)
+    tenant = factory.LazyAttribute(lambda answer: answer.user.tenant)
+    conversation_id = factory.Sequence(lambda n: f"test-conversation-{n}")
+    question = "What is the annual leave policy?"
+    answer = "Employees receive 20 days of annual leave."
+    citations = factory.LazyFunction(list)
+    is_complete = True

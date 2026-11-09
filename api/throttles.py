@@ -55,3 +55,28 @@ class ChatUserRateThrottle(SimpleRateThrottle):
             "scope": self.scope,
             "ident": ident,
         }
+
+
+class FeedbackUserRateThrottle(SimpleRateThrottle):
+    """
+    Per-user limit for feedback submissions.
+
+    Feedback is cheap to send and expensive to trust, so a runaway client
+    (or a script) must not be able to fill the table. The rate is a plain
+    DRF setting rather than a per-tenant row: feedback volume is not a
+    tenant-tunable business value the way chat quota is.
+    """
+
+    scope = "feedback"
+
+    def get_cache_key(self, request, view):
+        if request.user.is_authenticated:
+            ident = f"user-{request.user.pk}"
+        else:
+            ident = f"ip-{self.get_ident(request)}"
+
+        return self.cache_format % {
+            "scope": self.scope,
+            "ident": ident,
+        }
+

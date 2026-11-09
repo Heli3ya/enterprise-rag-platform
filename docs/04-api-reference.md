@@ -25,6 +25,7 @@
 | 401 | توکن نامعتبر/منقضی، کاربر بدون Tenant، Tenant غیرفعال |
 | 403 | نقش کافی نیست، دپارتمان نامرتبط، عدم دسترسی به سند |
 | 404 | سند یا Chunk یافت نشد |
+| 409 | بازخورد تکراری برای همان پاسخ |
 | 429 | محدودیت نرخ (چت، آپلود، Nginx) |
 | 502 | خطا در سرویس AI یا LLM |
 | 500 | خطای پیش‌بینی‌نشده |
@@ -34,6 +35,7 @@
 | مسیر | محدودیت | لایه |
 |---|---|---|
 | `POST /api/chat/ask/` | ۵۰ در ساعت (Member)، ۲۰۰ در ساعت (Admin) | DRF Throttle + `RateLimitConfig` |
+| `POST /api/chat/feedback/` | ۶۰ در ساعت به‌ازای هر کاربر | DRF Throttle (`feedback`) |
 | `POST /api/documents/` | ۱۰ در ساعت به‌ازای هر کاربر | django-ratelimit |
 | `/api/documents/` (همه متدها) | ۱۰ درخواست/ثانیه + ۲ POST/دقیقه به‌ازای IP | Nginx |
 | سایر `/api/` | ۱۰ درخواست/ثانیه به‌ازای IP | Nginx |
@@ -361,6 +363,7 @@ http://127.0.0.1:8000/api  +  /documents/30/file/  =  http://127.0.0.1:8000/api/
 {
   "query_text": "How many remote days are allowed?",
   "answer": "Employees may work remotely up to two days per week [340].",
+  "answer_id": "0f3a6f0e-5b6f-4f0e-9f0e-1c2b3a4d5e6f",
   "citations": [
     {
       "document_id": 12,
@@ -374,6 +377,8 @@ http://127.0.0.1:8000/api  +  /documents/30/file/  =  http://127.0.0.1:8000/api/
   ]
 }
 ```
+
+`answer_id` همان شناسه‌ای است که برای ثبت بازخورد در `POST /api/chat/feedback/` لازم است.
 
 اگر سندی پیدا نشود:
 
@@ -389,11 +394,14 @@ http://127.0.0.1:8000/api  +  /documents/30/file/  =  http://127.0.0.1:8000/api/
 {"question": "How many remote days are allowed?", "conversation_id": "conversation-123"}
 ```
 
-`conversation_id` در حال حاضر اجباری است اما در سرور ذخیره یا استفاده نمی‌شود.
+`conversation_id` اجباری است و همراه پاسخ ذخیره می‌شود تا بازخوردها و پاسخ‌ها به یک مکالمه قابل انتساب باشند.
 
 پاسخ: `Content-Type: text/event-stream`
 
 ```text
+event: meta
+data: {"answer_id":"0f3a6f0e-5b6f-4f0e-9f0e-1c2b3a4d5e6f","conversation_id":"conversation-123"}
+
 event: token
 data: {"content":"Employees "}
 
@@ -406,6 +414,8 @@ data: [{"document_id":12,"title":"Employee Handbook","filename":"handbook.pdf","
 event: done
 data: {}
 ```
+
+اولین رویداد همیشه `meta` است و `answer_id` را پیش از رسیدن نخستین توکن می‌دهد تا رابط کاربری بتواند از همان لحظه دکمه‌های بازخورد را به پاسخ متصل کند. پاسخ فقط پس از پایان جریان (و پیش از ارسال `done`) در جدول `ChatAnswer` نوشته می‌شود؛ اگر اتصال وسط کار قطع شود یا خطا رخ دهد، متن ناقص با `is_complete=False` ذخیره می‌شود.
 
 فیلدهای هر Citation:
 
@@ -436,6 +446,59 @@ curl -N -X POST http://127.0.0.1:8000/api/chat/ask/ \
 ```
 
 > اگر پشت پراکسی هستید، بافر شدن پاسخ را غیرفعال کنید تا توکن‌ها به‌صورت زنده برسند.
+
+### `POST /api/chat/feedback/`
+
+ثبت بازخورد کاربر روی یک پاسخ مشخص. نیازمند احراز هویت و Tenant فعال.
+
+بدنه:
+
+```json
+{
+  "answer_id": "0f3a6f0e-5b6f-4f0e-9f0e-1c2b3a4d5e6f",
+  "is_positive": true,
+  "user_comment": "دقیق و کامل بود."
+}
+```
+
+| فیلد | نوع | اجباری | توضیح |
+| --- | --- | --- | --- |
+| `answer_id` | UUID | بله | همان مقدار `answer_id` از رویداد `meta` یا پاسخ `/api/query/ask/` |
+| `is_positive` | boolean | بله | `true` = مفید، `false` = نامفید |
+| `user_comment` | string ≤ 2000 | خیر | متن آزاد؛ خالی و حذف‌شده هر دو مجازند |
+
+پاسخ `201`:
+
+```json
+{
+  "id": 41,
+  "answer_id": "0f3a6f0e-5b6f-4f0e-9f0e-1c2b3a4d5e6f",
+  "is_positive": true,
+  "user_comment": "دقیق و کامل بود.",
+  "created_at": "2026-11-09T14:52:10.184223Z"
+}
+```
+
+| کد | حالت |
+| --- | --- |
+| 201 | بازخورد ثبت شد |
+| 400 | `answer_id` نامعتبر، `is_positive` غایب، یا توضیح بلندتر از ۲۰۰۰ کاراکتر |
+| 401 | بدون توکن |
+| 403 | کاربر بدون Tenant یا Tenant غیرفعال |
+| 404 | پاسخ یافت نشد (شناسه ناموجود یا متعلق به کاربر/سازمان دیگر) |
+| 409 | برای این پاسخ قبلاً بازخورد ثبت شده است |
+| 429 | عبور از سقف ۶۰ درخواست در ساعت |
+
+> قاعده «یک بازخورد به‌ازای هر کاربر برای هر پاسخ» با `UniqueConstraint(answer, user)` در سطح دیتابیس تضمین می‌شود؛ بنابراین دو درخواست هم‌زمان هم نمی‌توانند دو ردیف بسازند و دومی `409` می‌گیرد.
+
+نمونه:
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/chat/feedback/ \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"answer_id":"0f3a6f0e-5b6f-4f0e-9f0e-1c2b3a4d5e6f","is_positive":false,"user_comment":"به بخش مرخصی اشاره نکرد."}'
+```
 
 ## ۶. تولید دستی Embedding
 
