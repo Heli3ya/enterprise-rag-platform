@@ -17,6 +17,10 @@ Tenant 1 ──── * User
    │        │
    │        └── User
    │
+   ├── * ChatAnswer 1 ──── * AnswerFeedback
+   │        │                    │
+   │        └── User             └── User
+   │
    └── * AuditLog ──── User
 ```
 
@@ -146,9 +150,46 @@ HnswIndex(
 | `chunk` | FK → DocumentChunk, CASCADE | نتیجه |
 | `relevance_score` | Float | امتیاز Rerank |
 
-این دو مدل فقط در `POST /api/query/search/` نوشته می‌شوند. `POST /api/search/` و چت تاریخچه ذخیره نمی‌کنند.
+این دو مدل فقط در `POST /api/query/search/` نوشته می‌شوند. `POST /api/search/` چیزی ذخیره نمی‌کند و چت از این دو جدول استفاده نمی‌کند؛ تاریخچه چت در `ChatAnswer` نگه داشته می‌شود.
 
-## ۹. AuditLog
+## ۹. ChatAnswer و AnswerFeedback
+
+`api/models.py`
+
+`ChatAnswer` — یک پاسخ تولیدشده، برای بازخورد و آموزش آینده:
+
+| فیلد | نوع | توضیح |
+|---|---|---|
+| `id` | UUIDField, PK | از پیش تولید می‌شود تا در رویداد `meta` به کلاینت برسد |
+| `tenant` | FK → Tenant, PROTECT, nullable | سازمان |
+| `user` | FK → User, CASCADE | صاحب پاسخ |
+| `conversation_id` | CharField(255) | شناسه مکالمه سمت کلاینت (بدون جدول مستقل) |
+| `question` | TextField | پرسش کاربر |
+| `answer` | TextField | متن کامل پاسخ (در جریان‌سازی، تجمعی) |
+| `citations` | JSONField | همان آرایه‌ای که به کلاینت داده شد |
+| `is_complete` | Boolean | `False` یعنی جریان نیمه‌کاره قطع/خطا شده و برای آموزش معتبر نیست |
+| `created_at` | DateTime | — |
+
+ایندکس‌ها: `(tenant, -created_at)` و `(tenant, conversation_id)`. ترتیب: `-created_at, -id`.
+
+`AnswerFeedback` — رأی یک کاربر روی یک پاسخ:
+
+| فیلد | نوع | توضیح |
+|---|---|---|
+| `answer` | FK → ChatAnswer, CASCADE | پاسخ مورد نظر |
+| `user` | FK → User, CASCADE | بازخورددهنده |
+| `tenant` | FK → Tenant, PROTECT, nullable | برای گزارش‌گیری بدون join |
+| `is_positive` | Boolean | `True` = مفید |
+| `user_comment` | TextField, blank | متن آزاد، حداکثر ۲۰۰۰ کاراکتر در لایه API |
+| `created_at` | DateTime | — |
+
+قید یکتایی `unique_feedback_per_user_answer` روی `(answer, user)` — تضمین واقعی «یک بازخورد به‌ازای هر کاربر برای هر پاسخ». بررسی وجود رکورد در View فقط مسیر سریع است؛ در درخواست هم‌زمان، دیتابیس تصمیم نهایی را می‌گیرد و `IntegrityError` به `409` تبدیل می‌شود.
+
+ایندکس‌ها: `(tenant, -created_at)` و `(tenant, is_positive)`.
+
+> چرا به `QueryResult` وصل نشد؟ `QueryResult` یک ردیف «امتیاز ارتباط Chunk با پرسش» است و نه پاسخ مدل؛ نه متن پاسخ دارد و نه شناسه یکتای پاسخ. برای Fine-tuning به جفت «پرسش + پاسخ» نیاز است، پس `ChatAnswer` ساخته شد و بازخورد به آن وصل می‌شود.
+
+## ۱۰. AuditLog
 
 `api/models.py`
 
@@ -163,7 +204,7 @@ HnswIndex(
 
 محدودیت: هیچ IP، User-Agent، شناسه سند یا جزئیات دیگری ثبت نمی‌شود.
 
-## ۱۰. RateLimitConfig
+## ۱۱. RateLimitConfig
 
 | فیلد | نوع | پیش‌فرض |
 |---|---|---|
@@ -173,7 +214,7 @@ HnswIndex(
 
 این مدل **Singleton** است: در `save()` مقدار `pk = 1` اجباری می‌شود. throttle مقدار آن را ۶۰ ثانیه در Redis کش می‌کند؛ تغییر مقدار حداکثر تا یک دقیقه بعد اثر می‌گذارد.
 
-## ۱۱. قواعد حذف
+## ۱۲. قواعد حذف
 
 | حذف | اثر |
 |---|---|
@@ -185,7 +226,7 @@ HnswIndex(
 
 نکته: حذف از مسیر API فایل فیزیکی را هم پاک می‌کند (`perform_destroy`). حذف از Django Admin یا shell فایل را روی دیسک باقی می‌گذارد.
 
-## ۱۲. مهاجرت‌ها
+## ۱۳. مهاجرت‌ها
 
 | اپ | مهاجرت‌های شاخص |
 |---|---|
@@ -193,7 +234,7 @@ HnswIndex(
 | `accounts` | `0002_user_tenant_alter_user_role`، `0003_assign_user_tenants` |
 | `departments` | `0002_department_tenant`، `0003_assign_default_tenant`، `0004_alter_department_name_alter_department_tenant_and_more` |
 | `documents` | `0003_embedding`، `0005_add_embedding_hnsw_index`، `0006_add_documentchunk_fts_index`، `0011_document_tenant_searchquery_tenant`، `0013_alter_document_file_path` |
-| `api` | `0002_ratelimitconfig`، `0003_auditlog_tenant`، `0004_assign_auditlog_tenants` |
+| `api` | `0002_ratelimitconfig`، `0003_auditlog_tenant`، `0004_assign_auditlog_tenants`، `0005_chatanswer_answerfeedback_and_more` |
 
 مهاجرت‌های `assign_*` برای مهاجرت داده‌های قدیمی به مدل چند-مستأجری نوشته شده‌اند. در محیط تازه، این‌ها معمولاً کاری انجام نمی‌دهند.
 
@@ -206,7 +247,7 @@ python manage.py showmigrations
 
 در Docker، سرویس `django` هنگام بالا آمدن `migrate --noinput` را اجرا می‌کند. سرویس `celery_worker` این کار را نمی‌کند؛ پس ترتیب بالا آمدن مهم است.
 
-## ۱۳. نکات عملیاتی پایگاه داده
+## ۱۴. نکات عملیاتی پایگاه داده
 
 - افزونه `vector` باید در دیتابیس ساخته شود (`CREATE EXTENSION IF NOT EXISTS vector;`). فایل `docker/postgres/init.sql` همین کار را در اولین راه‌اندازی انجام می‌دهد.
 - برای تست‌ها، Django از یک دیتابیس Template به نام `enterprise_rag_test_template` استفاده می‌کند که باید از قبل ساخته شده و افزونه در آن نصب باشد.
