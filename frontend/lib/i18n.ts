@@ -189,6 +189,35 @@ const FA: Record<string, string> = {
 	"Matched passage": "بخش مطابق",
 	"Document preview": "پیش‌نمایش سند",
 	Close: "بستن",
+
+	// -- answer feedback ---------------------------------------------
+	"Was this answer helpful?": "آیا این پاسخ مفید بود؟",
+	"Rate this answer": "به این پاسخ امتیاز دهید",
+	Helpful: "مفید بود",
+	"Not helpful": "مفید نبود",
+	"Saving your feedback...": "در حال ثبت بازخورد...",
+	"Thanks for your feedback.": "از بازخورد شما سپاسگزاریم.",
+	"What went wrong with this answer?": "این پاسخ چه مشکلی داشت؟",
+	"Optional — your note helps us improve the answers.":
+		"اختیاری — یادداشت شما به بهبود پاسخ‌ها کمک می‌کند.",
+	"Missing information, wrong source, unclear wording...":
+		"اطلاعات ناقص، منبع نادرست، بیان نامشخص...",
+	Cancel: "انصراف",
+	"Saving...": "در حال ثبت...",
+	"Submit feedback": "ثبت بازخورد",
+	"This answer is no longer available.": "این پاسخ دیگر در دسترس نیست.",
+	"Your session has expired. Please sign in again.":
+		"نشست شما منقضی شده است. دوباره وارد شوید.",
+	"You do not have access to rate this answer.":
+		"شما اجازه ثبت بازخورد برای این پاسخ را ندارید.",
+	"That feedback could not be saved. Please try again.":
+		"این بازخورد ذخیره نشد. دوباره تلاش کنید.",
+	"Too many feedback attempts. Please try again later.":
+		"تعداد تلاش‌های بازخورد زیاد بود. بعداً دوباره تلاش کنید.",
+	"Could not reach the server. Please try again.":
+		"اتصال به سرور برقرار نشد. دوباره تلاش کنید.",
+	"Could not send your feedback. Please try again.":
+		"ارسال بازخورد انجام نشد. دوباره تلاش کنید.",
 };
 
 /**

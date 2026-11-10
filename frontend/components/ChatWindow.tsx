@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import { API_BASE_URL, authorizedFetch, readErrorMessage } from "../lib/api";
 import type { Citation } from "../lib/citations";
 import AnswerContent from "./AnswerContent";
+import AnswerFeedback from "./AnswerFeedback";
 import CitationList from "./CitationList";
 import CitationPanel from "./CitationPanel";
 import { useT } from "./PreferencesProvider";
@@ -20,6 +21,12 @@ type Message = {
 	citations?: Citation[];
 	/** The question behind an assistant answer, used to highlight sources. */
 	question?: string;
+	/** UUID from the stream's `meta` event; enables the feedback widget. */
+	answerId?: string;
+	/** True until the stream ends, so feedback is only offered on a full answer. */
+	isStreaming?: boolean;
+	/** Set when the stream failed; a broken answer must not be rated. */
+	failed?: boolean;
 };
 
 type ActiveSource = {
@@ -80,6 +87,7 @@ export default function ChatWindow() {
 			role: "assistant",
 			content: "",
 			isLoading: true,
+			isStreaming: true,
 			citations: [],
 			question,
 		};
@@ -178,6 +186,26 @@ export default function ChatWindow() {
 						continue;
 					}
 
+					// Sent before the first token: it carries the answer id the
+					// feedback endpoint needs, so the widget is ready by the
+					// time the answer finishes rendering.
+					if (eventType === "meta") {
+						const metaPayload = data as { answer_id?: string };
+
+						setMessages((currentMessages) =>
+							currentMessages.map((message) => {
+								if (message.id !== assistantMessageId) {
+									return message;
+								}
+
+								return {
+									...message,
+									answerId: metaPayload.answer_id,
+								};
+							}),
+						);
+					}
+
 					if (eventType === "token") {
 						const tokenPayload = data as { content?: string };
 
@@ -221,6 +249,7 @@ export default function ChatWindow() {
 								return {
 									...message,
 									isLoading: false,
+									isStreaming: false,
 								};
 							}),
 						);
@@ -237,6 +266,7 @@ export default function ChatWindow() {
 					return {
 						...message,
 						isLoading: false,
+						isStreaming: false,
 					};
 				}),
 			);
@@ -258,6 +288,8 @@ export default function ChatWindow() {
 						...message,
 						content: `${t("Sorry, an error occurred:")} ${errorMessage}`,
 						isLoading: false,
+						isStreaming: false,
+						failed: true,
 					};
 				}),
 			);
@@ -342,6 +374,15 @@ export default function ChatWindow() {
 												handleCitationClick(citation, message.question ?? "")
 											}
 										/>
+									)}
+
+								{/* Only a finished, successful answer can be rated:
+								    a failed stream has no stored row to attach to. */}
+								{message.role === "assistant" &&
+									message.answerId &&
+									!message.isStreaming &&
+									!message.failed && (
+										<AnswerFeedback answerId={message.answerId} />
 									)}
 							</div>
 						</div>
