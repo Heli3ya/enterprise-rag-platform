@@ -128,7 +128,10 @@ test("member completes upload, chat, and citation flow", async ({ page }) => {
   });
 
   // Mock the chunk detail endpoint used by the citation drawer.
-  await page.route(/\/documents\/chunks\/\d+\/?$/, async (route) => {
+  // The panel requests `/documents/chunks/1/?q=...`, so the pattern must
+  // allow a query string — anchoring at `$` alone let the request escape
+  // to the real backend, where the fake token answered 401.
+  await page.route(/\/documents\/chunks\/\d+\/?(?:\?.*)?$/, async (route) => {
     console.log("[MOCK] Chunk detail matched");
 
     await route.fulfill({
@@ -259,8 +262,10 @@ console.log(
   // 7. The source list shows the cited document and its chunk.
   await expect(page.getByText("Sources", { exact: true })).toBeVisible();
 
+  // The source card is labelled `Source [<chunk_id>] <filename>`, matching
+  // the `[n]` markers inside the answer text.
   await expect(
-    page.getByRole("button", { name: /Open source \[1\] e2e-knowledge\.txt/ }),
+    page.getByRole("button", { name: /Source \[1\] e2e-knowledge\.txt/ }),
   ).toBeVisible();
 
   await expect(page.getByText("IT · Chunk 1", { exact: true })).toBeVisible();
@@ -291,7 +296,15 @@ console.log(
   await citationDialog.getByRole("button", { name: "Cited passage" }).click();
 
   await expect(
-    citationDialog.getByText("CITED PASSAGE", { exact: true }),
+    citationDialog.getByRole("button", { name: "Cited passage" }),
+  ).toHaveAttribute("aria-pressed", "true");
+
+  // The passage tab shows the retrieved chunk itself, not the whole file.
+  await expect(
+    citationDialog.getByText(
+      "Example policy: documents are retained for seven years.",
+      { exact: true },
+    ),
   ).toBeVisible();
 
   await expect(
@@ -304,7 +317,7 @@ console.log(
   await expect(citationDialog).toHaveCount(0);
 
   await page
-    .getByRole("button", { name: /Open source \[1\] e2e-knowledge\.txt/ })
+    .getByRole("button", { name: /Source \[1\] e2e-knowledge\.txt/ })
     .click();
 
   await expect(citationDialog).toBeVisible();
