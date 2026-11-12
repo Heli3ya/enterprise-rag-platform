@@ -68,6 +68,14 @@ class Document(models.Model):
     )
 
     is_public = models.BooleanField(default=False)
+
+    # True for documents the platform writes itself (today: the
+    # department onboarding guide). They are chunked and searchable like
+    # any other document, but they are not user content: the dashboard
+    # keeps showing "no documents yet" until a real file is uploaded, and
+    # the analytics totals ignore them.
+    is_system = models.BooleanField(default=False)
+
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):

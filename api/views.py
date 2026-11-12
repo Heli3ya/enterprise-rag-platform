@@ -509,6 +509,22 @@ def rag_query_view(request):
 
     create_audit_log(request.user, "RAG_QUERY")
 
+    # Nothing was retrieved, so nothing is stored: there is no answer to
+    # rate, and a feedback row pointing at an empty answer would only
+    # pollute the training export.
+    if result.get("no_documents"):
+        return Response(
+            {
+                "query_text": query_text,
+                "answer": result["answer"],
+                "citations": [],
+                "answer_id": None,
+                "no_documents": True,
+                "reason": result["reason"],
+            },
+            status=status.HTTP_200_OK,
+        )
+
     # Persist the answer so the client can rate it through
     # POST /api/chat/feedback/ using the returned `answer_id`.
     answer_id = uuid.uuid4()
@@ -532,6 +548,8 @@ def rag_query_view(request):
             "answer": result["answer"],
             "citations": result["citations"],
             "answer_id": str(answer_id),
+            "no_documents": False,
+            "reason": None,
         },
         status=status.HTTP_200_OK,
     )
@@ -545,7 +563,13 @@ def rag_query_view(request):
                 "Server-sent events stream. The first event is `meta` and "
                 "carries the `answer_id` needed by "
                 "POST /api/chat/feedback/, followed by `token`, "
-                "`citations` and `done` events."
+                "`citations` and `done` events.\n\n"
+                "When the department has no searchable document, or "
+                "nothing matches the question, a single `no_documents` "
+                "event (`reason`: `empty_department` or `no_match`) is "
+                "sent instead of `token`/`citations` and the LLM is "
+                "never called. No answer row is stored in that case, so "
+                "the `answer_id` from `meta` cannot be rated."
             ),
         ),
     },
@@ -576,6 +600,9 @@ def chat_ask_view(request):
         answer_text = ""
         citations = []
         is_complete = False
+        # Set by the cold-start branch: nothing was retrieved, so there
+        # is no answer row to write and no answer_id worth rating.
+        no_documents = False
 
         try:
             meta = json.dumps(
@@ -611,6 +638,21 @@ def chat_ask_view(request):
                         f"{json.dumps(citations, ensure_ascii=False)}\n\n"
                     )
 
+                elif event_type == "no_documents":
+                    # Cold start: nothing was retrieved, so no LLM call
+                    # was made. `reason` lets the UI choose between an
+                    # upload prompt and a "rephrase that" hint.
+                    no_documents = True
+
+                    data = {
+                        "reason": event["reason"],
+                        "message": event["message"],
+                    }
+                    yield (
+                        "event: no_documents\n"
+                        f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
+                    )
+
                 elif event_type == "error":
                     data = {"error": event["message"]}
                     yield (
@@ -619,6 +661,14 @@ def chat_ask_view(request):
                     )
 
                 elif event_type == "done":
+                    if no_documents:
+                        # An empty answer is not an answer: storing it
+                        # would put a blank row into the fine-tuning
+                        # export and hand the client a rateable id for
+                        # something that was never generated.
+                        yield "event: done\ndata: {}\n\n"
+                        return
+
                     # Write before announcing completion: a client that
                     # posts feedback on `done` must never find a missing
                     # answer row.
@@ -828,7 +878,7 @@ def admin_analytics_view(request):
     tenant_documents = Document.objects.filter(
         tenant_id=tenant_id,
         department__tenant_id=tenant_id,
-    )
+    ).exclude(is_system=True)
 
     document_stats = tenant_documents.aggregate(
         total_documents=Count("id"),

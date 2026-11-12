@@ -84,6 +84,9 @@ class DocumentListSerializer(serializers.ModelSerializer):
             "department",
             "status",
             "created_at",
+            # The UI badges platform-generated documents (the onboarding
+            # guide) and never offers a delete button for them.
+            "is_system",
         ]
 
 

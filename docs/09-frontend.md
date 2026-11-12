@@ -186,10 +186,13 @@ npx playwright test
 - `e2e/homepage.spec.ts`
 - `e2e/full-user-flow.spec.ts`
 - `e2e/chat-feedback.spec.ts` — سه مسیر: 👎 با دلیل، 👍 تک‌کلیکی، و خطای سرور با فعال‌شدن دوباره‌ی دکمه‌ها
+- `e2e/cold-start-empty-state.spec.ts` — چهار مسیر: بنر شروع سرد، پاسخ «سندی یافت نشد» در حباب، ناپدیدشدن بنر پس از اولین آپلود، و دپارتمان غیرخالی
 
 Playwright سرور توسعه را خودش بالا می‌آورد (`webServer`)، `baseURL` روی `http://127.0.0.1:3000` است و در CI دو بار retry می‌کند.
 
 پیش‌نیاز اجرای موفق: بک‌اند و سرویس AI در دسترس، و یک کاربر معتبر برای سناریوی ورود.
+
+> هر spec که صفحه اصلی را باز می‌کند باید `/api/departments/readiness/` را هم mock کند. این درخواست بدون mock به بک‌اند واقعی می‌رسد و پاسخ `401` باعث می‌شود interceptor کاربر را به `/login` بفرستد.
 
 ## ۱۱. نکات توسعه
 
@@ -204,3 +207,53 @@ export default withAuth(MyPage);
 
 - برای مسیر فقط-Admin، علاوه بر `withAuth`، نقش را از `useAuth()` بررسی کنید و در بک‌اند هم مجوز را اعمال کنید.
 - پیام‌های خطا را به کاربر نشان دهید؛ `console.error` تنها کافی نیست.
+
+## ۱۲. Empty State و شروع سرد
+
+دپارتمان تازه هیچ سندی ندارد. رابط کاربری این وضعیت را در دو جای متفاوت نشان می‌دهد و هر دو از یک کامپوننت می‌آیند:
+
+| محل | کامپوننت | variant |
+|---|---|---|
+| داشبورد (بالای آپلودر) | `components/DepartmentEmptyState.tsx` → `EmptyState` | `page` |
+| حباب پاسخ دستیار | `components/ChatWindow.tsx` → `EmptyState` | `inline` |
+
+### داده از کجا می‌آید
+
+`lib/readiness.ts` تابع `fetchDepartmentReadiness` را دارد که `GET /api/departments/readiness/` را صدا می‌زند و **هرگز throw نمی‌کند**: در خطا `null` برمی‌گرداند و بنر به‌سادگی نمایش داده نمی‌شود. داشبورد نباید به‌خاطر یک کاوش جانبی به صفحه خطا تبدیل شود.
+
+وضعیت در `app/page.tsx` نگه داشته می‌شود (نه در کامپوننت بنر)، چون بعد از آپلود موفق باید دوباره خوانده شود:
+
+```tsx
+<DocumentUploader onUploaded={refreshReadiness} />
+<DepartmentEmptyState readiness={readiness} onRefresh={refreshReadiness} />
+```
+
+`DocumentUploader` بعد از آپلود موفق `onUploaded` را صدا می‌زند، بنابراین بنر بدون reload ناپدید می‌شود.
+
+### تفکیک `is_empty` از `has_searchable_content`
+
+دپارتمان تازه سند راهنمای خودکار دارد، پس «خالی» نیست ولی «آماده پاسخ» هست. به همین دلیل:
+
+- `is_empty` → نمایش بنر «آپلود اولین سند»
+- `has_searchable_content` → اینکه دستیار می‌تواند از راهنما پاسخ دهد
+
+به همین دلیل دکمه دوم بنر کاربر را به گفتگو می‌فرستد، نه به بن‌بست.
+
+### رفتار حباب پاسخ
+
+رویداد `no_documents` در استریم باعث می‌شود پیام به‌جای متن، `EmptyState` رندر کند (`message.empty`). دو حالت:
+
+| `reason` | عنوان | اقدام اصلی |
+|---|---|---|
+| `empty_department` | «دپارتمان شما هنوز سندی ندارد» | آپلود اولین سند |
+| `no_match` | «سندی مرتبط با این موضوع یافت نشد» | پرسش با کلمات دیگر |
+
+برای این پیام‌ها `AnswerFeedback` رندر نمی‌شود، چون ردیفی در `ChatAnswer` وجود ندارد.
+
+### فوکوس بدون prop drilling
+
+`lib/focusTargets.ts` دو شناسه ثابت (`document-upload`, `document-upload-trigger`, `chat-input`) و دو تابع `focusDocumentUploader` / `focusChatInput` دارد. بنر و حباب هر دو از همین توابع استفاده می‌کنند؛ عبور ref از سه لایه برای یک اسکرول و فوکوس ارزشش را نداشت.
+
+### ترجمه
+
+همه رشته‌های جدید در `lib/i18n.ts` با کلید انگلیسی و ترجمه فارسی اضافه شده‌اند. متن فارسی پیام «سندی یافت نشد» عیناً همان جمله‌ای است که بک‌اند در `NO_DOCUMENTS_MESSAGE` برمی‌گرداند، تا API و UI یک حرف هم اختلاف نداشته باشند.

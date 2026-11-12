@@ -113,6 +113,34 @@
 
 پاسخ `201` با شیء دپارتمان.
 
+هنگام ساخت دپارتمان، یک سند راهنمای خودکار هم برای آن ساخته می‌شود (بخش «سند راهنمای خودکار» در [`06-document-pipeline.md`](06-document-pipeline.md)). این کار در تراکنش جدا و بدون دخالت کلاینت انجام می‌شود و اگر شکست بخورد، ساخت دپارتمان را خراب نمی‌کند.
+
+### `GET /api/departments/readiness/`
+
+هر کاربر احراز هویت‌شده با دپارتمان. یک کاوش ارزان (سه کوئری محدود، بدون فراخوانی سرویس AI) برای تصمیم‌گیری داشبورد بین «شروع از صفر» و «پایگاه دانش آماده است».
+
+```json
+{
+  "department_id": 1,
+  "department_name": "IT",
+  "document_count": 0,
+  "has_searchable_content": true,
+  "is_empty": true,
+  "onboarding_document_id": 41
+}
+```
+
+| فیلد | معنی |
+|---|---|
+| `document_count` | تعداد اسناد **کاربر**؛ سند راهنمای خودکار شمرده نمی‌شود |
+| `has_searchable_content` | آیا دپارتمان حتی یک Chunk دارد؟ (سند راهنما هم Chunk دارد) |
+| `is_empty` | `document_count == 0` — مبنای نمایش Empty State |
+| `onboarding_document_id` | شناسه سند راهنما، یا `null` اگر دپارتمان قدیمی هنوز backfill نشده باشد |
+
+تفکیک `is_empty` از `has_searchable_content` عمدی است: دپارتمان تازه‌ساز با سند راهنما «خالی» است ولی «بی‌پاسخ» نیست.
+
+خطاها: `401` بدون احراز هویت، `403` اگر کاربر Tenant یا دپارتمان نداشته باشد.
+
 ## ۴. اسناد
 
 ### `GET /api/documents/`
@@ -126,10 +154,13 @@
     "title": "Employee Handbook",
     "department": 1,
     "status": "Indexed",
-    "created_at": "2026-01-02T08:30:00Z"
+    "created_at": "2026-01-02T08:30:00Z",
+    "is_system": false
   }
 ]
 ```
+
+`is_system: true` یعنی سند را پلتفرم ساخته است (سند راهنمای دپارتمان). چنین سندی در رابط کاربری نشان «System guide» می‌گیرد و دکمه حذف ندارد؛ در `document_count` مربوط به readiness و در آمار داشبورد ادمین هم شمرده نمی‌شود.
 
 ### `POST /api/documents/`
 
@@ -364,6 +395,8 @@ http://127.0.0.1:8000/api  +  /documents/30/file/  =  http://127.0.0.1:8000/api/
   "query_text": "How many remote days are allowed?",
   "answer": "Employees may work remotely up to two days per week [340].",
   "answer_id": "0f3a6f0e-5b6f-4f0e-9f0e-1c2b3a4d5e6f",
+  "no_documents": false,
+  "reason": null,
   "citations": [
     {
       "document_id": 12,
@@ -380,11 +413,20 @@ http://127.0.0.1:8000/api  +  /documents/30/file/  =  http://127.0.0.1:8000/api/
 
 `answer_id` همان شناسه‌ای است که برای ثبت بازخورد در `POST /api/chat/feedback/` لازم است.
 
-اگر سندی پیدا نشود:
+اگر چیزی برای پاسخ‌دادن نباشد (`no_documents: true`)، مدل زبانی **فراخوانی نمی‌شود**، پاسخ ذخیره نمی‌شود و `answer_id` برابر `null` است:
 
 ```json
-{"answer": "No relevant documents were found.", "citations": []}
+{
+  "query_text": "What is the parental leave policy?",
+  "answer": "در حال حاضر سندی مرتبط با این موضوع در دپارتمان شما یافت نشد.",
+  "citations": [],
+  "answer_id": null,
+  "no_documents": true,
+  "reason": "empty_department"
+}
 ```
+
+`reason` یکی از دو مقدار است: `empty_department` (دپارتمان هیچ Chunk ندارد) یا `no_match` (Chunk وجود دارد ولی هیچ‌کدام به پرسش مربوط نبود). متن `answer` برای کلاینت‌های غیرمرورگری است؛ رابط کاربری پیام خودش را بر اساس `reason` و زبان انتخابی می‌سازد.
 
 ### `POST /api/chat/ask/`
 
@@ -416,6 +458,23 @@ data: {}
 ```
 
 اولین رویداد همیشه `meta` است و `answer_id` را پیش از رسیدن نخستین توکن می‌دهد تا رابط کاربری بتواند از همان لحظه دکمه‌های بازخورد را به پاسخ متصل کند. پاسخ فقط پس از پایان جریان (و پیش از ارسال `done`) در جدول `ChatAnswer` نوشته می‌شود؛ اگر اتصال وسط کار قطع شود یا خطا رخ دهد، متن ناقص با `is_complete=False` ذخیره می‌شود.
+
+#### رویداد `no_documents` (شروع سرد)
+
+اگر دپارتمان هیچ Chunk قابل جست‌وجو نداشته باشد، یا هیچ Chunkی به پرسش مربوط نباشد، جریان به‌جای `token`/`citations` فقط یک رویداد `no_documents` و سپس `done` می‌فرستد. مدل زبانی و حتی Embedding پرسش فراخوانی نمی‌شود و هیچ ردیفی در `ChatAnswer` نوشته نمی‌شود، پس `answer_id` آمده در `meta` قابل ثبت بازخورد نیست.
+
+```text
+event: meta
+data: {"answer_id":"...","conversation_id":"conversation-123"}
+
+event: no_documents
+data: {"reason":"empty_department","message":"در حال حاضر سندی مرتبط با این موضوع در دپارتمان شما یافت نشد."}
+
+event: done
+data: {}
+```
+
+جریان همیشه با `done` تمام می‌شود؛ کلاینت تنها بر اساس همین رویداد نشانگر «در حال فکر کردن» را خاموش می‌کند.
 
 فیلدهای هر Citation:
 

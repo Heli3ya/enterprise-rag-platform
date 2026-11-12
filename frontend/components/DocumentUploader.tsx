@@ -9,6 +9,7 @@ import {
 	useState,
 } from "react";
 import api from "@/lib/api";
+import { UPLOAD_SECTION_ID, UPLOAD_TRIGGER_ID } from "@/lib/focusTargets";
 import { useT } from "./PreferencesProvider";
 
 type Department = {
@@ -27,6 +28,8 @@ type DocumentItem = {
 	status?: string;
 	file_size?: number;
 	created_at?: string;
+	/** True for the auto-generated onboarding guide. */
+	is_system?: boolean;
 };
 
 type ApiList<T> = T[] | { results?: T[] };
@@ -132,7 +135,17 @@ function isAllowedFile(file: File): boolean {
 	return extensionAllowed && mimeAllowed;
 }
 
-export default function DocumentUploader() {
+type DocumentUploaderProps = {
+	/**
+	 * Called after a successful upload so the dashboard can refresh its
+	 * cold-start state without a page reload.
+	 */
+	onUploaded?: () => void;
+};
+
+export default function DocumentUploader({
+	onUploaded,
+}: DocumentUploaderProps) {
 	const t = useT();
 	const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -194,36 +207,39 @@ export default function DocumentUploader() {
 		void fetchDocuments();
 	}, [fetchDepartments, fetchDocuments]);
 
-	const handleFileSelection = useCallback((file: File | null) => {
-		setError("");
-		setSuccess("");
+	const handleFileSelection = useCallback(
+		(file: File | null) => {
+			setError("");
+			setSuccess("");
 
-		if (!file) {
-			setSelectedFile(null);
-			return;
-		}
-
-		if (!isAllowedFile(file)) {
-			setSelectedFile(null);
-			setError(t("Only PDF, Word (.doc/.docx), and TXT files are allowed."));
-
-			if (fileInputRef.current) {
-				fileInputRef.current.value = "";
+			if (!file) {
+				setSelectedFile(null);
+				return;
 			}
 
-			return;
-		}
+			if (!isAllowedFile(file)) {
+				setSelectedFile(null);
+				setError(t("Only PDF, Word (.doc/.docx), and TXT files are allowed."));
 
-		setSelectedFile(file);
+				if (fileInputRef.current) {
+					fileInputRef.current.value = "";
+				}
 
-		setTitle((current) => {
-			if (current.trim()) {
-				return current;
+				return;
 			}
 
-			return file.name.replace(/\.[^.]+$/, "");
-		});
-	}, []);
+			setSelectedFile(file);
+
+			setTitle((current) => {
+				if (current.trim()) {
+					return current;
+				}
+
+				return file.name.replace(/\.[^.]+$/, "");
+			});
+		},
+		[t],
+	);
 
 	const handleInputChange = (event: ChangeEvent<HTMLInputElement>) => {
 		handleFileSelection(event.target.files?.[0] ?? null);
@@ -303,6 +319,10 @@ export default function DocumentUploader() {
 			}
 
 			await fetchDocuments();
+
+			// The first upload turns a cold-start department into a
+			// normal one, so the dashboard re-asks for its readiness.
+			onUploaded?.();
 		} catch (err: unknown) {
 			setError(`Upload failed: ${getErrorMessage(err)}`);
 		} finally {
@@ -335,11 +355,14 @@ export default function DocumentUploader() {
 	};
 
 	return (
-		<section className="space-y-8 rounded-xl bg-white p-6 shadow-sm">
+		<section
+			id={UPLOAD_SECTION_ID}
+			className="scroll-mt-6 space-y-8 rounded-xl bg-white p-6 shadow-sm"
+		>
 			<div>
 				<h2 className="text-xl font-semibold text-gray-900">
-				{t("Upload Document")}
-			</h2>
+					{t("Upload Document")}
+				</h2>
 				<p className="mt-1 text-sm text-gray-500">
 					Upload a PDF, Word, or TXT document and assign it to a department.
 				</p>
@@ -428,6 +451,7 @@ export default function DocumentUploader() {
 					/>
 
 					<button
+						id={UPLOAD_TRIGGER_ID}
 						type="button"
 						onClick={() => fileInputRef.current?.click()}
 						onDragOver={handleDragOver}
@@ -590,6 +614,13 @@ export default function DocumentUploader() {
 										>
 											<td className="max-w-xs break-words px-3 py-4 font-medium text-gray-800">
 												{document.title || getFileName(document)}
+
+												{document.is_system && (
+													<span className="ms-2 inline-flex rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">
+														{t("System guide")}
+													</span>
+												)}
+
 												{document.title &&
 													getFileName(document) !== document.title && (
 														<span className="mt-1 block text-xs font-normal text-gray-500">
@@ -621,16 +652,22 @@ export default function DocumentUploader() {
 											</td>
 
 											<td className="px-3 py-4">
-												<button
-													type="button"
-													onClick={() => void handleDelete(document.id)}
-													disabled={deletingId === document.id}
-													className="rounded-md px-2 py-1 text-sm font-medium text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
-												>
-													{deletingId === document.id
-									? t("Deleting...")
-										: t("Delete")}
-												</button>
+												{document.is_system ? (
+													<span className="text-xs text-gray-400">
+														{t("Managed by the platform")}
+													</span>
+												) : (
+													<button
+														type="button"
+														onClick={() => void handleDelete(document.id)}
+														disabled={deletingId === document.id}
+														className="rounded-md px-2 py-1 text-sm font-medium text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+													>
+														{deletingId === document.id
+															? t("Deleting...")
+															: t("Delete")}
+													</button>
+												)}
 											</td>
 										</tr>
 									);

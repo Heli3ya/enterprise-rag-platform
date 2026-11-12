@@ -24,6 +24,26 @@ logger = logging.getLogger(__name__)
 MISSING_RERANK_SCORE = -1e9
 
 
+# --- Cold start -------------------------------------------------------
+#
+# A department can be brand new, or simply have nothing about a given
+# topic. Both cases must end in an honest "I have nothing to answer
+# from" instead of a confident hallucination, and neither may cost an
+# LLM call. The two reasons are kept apart because the UI acts on them
+# differently: an empty department needs an upload prompt, a miss on a
+# populated one only needs a rephrasing hint.
+EMPTY_DEPARTMENT = "empty_department"
+NO_MATCHING_CHUNKS = "no_match"
+
+# Returned by the API so non-browser clients (curl, Swagger, the
+# evaluation harness) still get a readable sentence. The frontend keys
+# its own copy off `reason`, so this string is a fallback, not the UI
+# text.
+NO_DOCUMENTS_MESSAGE = (
+    "در حال حاضر سندی مرتبط با این موضوع در دپارتمان شما یافت نشد."
+)
+
+
 class AIServiceError(RuntimeError):
     """The AI inference service returned an error response."""
 
@@ -175,6 +195,45 @@ def get_user_department_id(user):
         return None
 
     return getattr(user, "department_id", None)
+
+
+def department_has_searchable_content(user):
+    """
+    Answer "could this department possibly answer anything?" from Postgres.
+
+    This is the cold-start gate and it runs *before* the embedding call.
+    A brand-new department would otherwise pay for a query embedding, a
+    vector round-trip, a rerank and a generation pass, only to be told
+    that there was nothing to read. One `EXISTS ... LIMIT 1` against an
+    indexed foreign key costs a fraction of a millisecond and skips the
+    whole pipeline.
+
+    The check looks at chunks rather than documents on purpose: a
+    document that is still Pending has no chunks, so it cannot answer
+    anything yet, and the user should be told exactly that.
+    """
+
+    department_id = get_user_department_id(user)
+
+    if department_id is None:
+        return False
+
+    return DocumentChunk.objects.filter(
+        document__tenant_id=user.tenant_id,
+        document__department_id=department_id,
+        document__department__tenant_id=user.tenant_id,
+    ).exists()
+
+
+def _no_documents(reason):
+    """Build the single, canonical "nothing to answer from" payload."""
+
+    return {
+        "answer": NO_DOCUMENTS_MESSAGE,
+        "citations": [],
+        "no_documents": True,
+        "reason": reason,
+    }
 
 
 def semantic_search(query, limit=5, user=None):
@@ -601,6 +660,11 @@ def build_citations(citation_ids, user=None):
 
 
 def generate_rag_answer(query, limit=5, user=None):
+    # Cold start: stop before any network call. See
+    # department_has_searchable_content() for why this is a chunk probe.
+    if not department_has_searchable_content(user):
+        return _no_documents(EMPTY_DEPARTMENT)
+
     results = hybrid_search(
         query,
         limit=limit,
@@ -608,10 +672,7 @@ def generate_rag_answer(query, limit=5, user=None):
     )
 
     if not results:
-        return {
-            "answer": "No relevant documents were found.",
-            "citations": [],
-        }
+        return _no_documents(NO_MATCHING_CHUNKS)
 
     prompt = build_rag_prompt(query, results)
 
@@ -635,10 +696,27 @@ def generate_rag_answer(query, limit=5, user=None):
     return {
         "answer": answer,
         "citations": citations,
+        "no_documents": False,
+        "reason": None,
     }
 
 
 def generate_rag_stream(query, limit=5, user=None):
+    # Same gate as generate_rag_answer, but it must not raise: the
+    # caller has already committed to a 200 text/event-stream response.
+    #
+    # Every branch ends with `done`. The client uses that event to stop
+    # its spinner, so an unterminated stream would leave the UI stuck on
+    # "thinking" forever — the exact opposite of the cold-start goal.
+    if not department_has_searchable_content(user):
+        yield {
+            "type": "no_documents",
+            "reason": EMPTY_DEPARTMENT,
+            "message": NO_DOCUMENTS_MESSAGE,
+        }
+        yield {"type": "done"}
+        return
+
     results = hybrid_search(
         query,
         limit=limit,
@@ -647,9 +725,11 @@ def generate_rag_stream(query, limit=5, user=None):
 
     if not results:
         yield {
-            "type": "error",
-            "message": "No relevant documents were found.",
+            "type": "no_documents",
+            "reason": NO_MATCHING_CHUNKS,
+            "message": NO_DOCUMENTS_MESSAGE,
         }
+        yield {"type": "done"}
         return
 
     prompt = build_rag_prompt(query, results)

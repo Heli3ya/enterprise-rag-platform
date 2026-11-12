@@ -389,6 +389,11 @@ def test_rag_query_returns_answer_and_citations(admin_client):
     # `answer_id` is new (the handle for POST /api/chat/feedback/) and is
     # asserted separately so this test keeps checking the answer payload.
     assert body.pop("answer_id")
+
+    # Cold-start markers: this answer did come from documents.
+    assert body.pop("no_documents") is False
+    assert body.pop("reason") is None
+
     assert body == {
         "query_text": "annual leave",
         "answer": "Annual leave requires approval. [15]",

@@ -99,6 +99,10 @@ pip install -r requirements-django.txt
 
 python manage.py migrate
 python manage.py check
+
+# دپارتمان‌های موجود را به سند راهنمای شروع سرد مجهز می‌کند (idempotent)
+python manage.py seed_onboarding_docs
+
 python manage.py runserver 8000
 ```
 
