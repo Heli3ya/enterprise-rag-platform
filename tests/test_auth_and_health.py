@@ -154,9 +154,15 @@ def test_search_returns_503_when_ai_service_is_unavailable():
     api_client = APIClient()
     api_client.force_authenticate(user=user)
 
-    with patch(
-        "api.views.hybrid_search",
-        side_effect=AIServiceUnavailable("AI service is unavailable"),
+    with (
+        patch(
+            "api.views.department_has_searchable_content",
+            return_value=True,
+        ),
+        patch(
+            "api.views.hybrid_search",
+            side_effect=AIServiceUnavailable("AI service is unavailable"),
+        ),
     ):
         response = api_client.post(
             "/api/search/",
@@ -174,10 +180,16 @@ def test_search_passes_the_authenticated_user_to_the_search_layer():
     api_client = APIClient()
     api_client.force_authenticate(user=user)
 
-    with patch(
-        "api.views.hybrid_search",
-        return_value=[],
-    ) as search:
+    with (
+        patch(
+            "api.views.department_has_searchable_content",
+            return_value=True,
+        ),
+        patch(
+            "api.views.hybrid_search",
+            return_value=[],
+        ) as search,
+    ):
         response = api_client.post(
             "/api/search/",
             {"query": "annual leave"},

@@ -351,6 +351,8 @@ http://127.0.0.1:8000/api  +  /documents/30/file/  =  http://127.0.0.1:8000/api/
 
 نکته: `score` در این endpoint امتیاز ادغام‌شده است، نه امتیاز Rerank. حداکثر ۵ نتیجه برگردانده می‌شود.
 
+اگر دپارتمان کاربر هیچ Chunk قابل جست‌وجو نداشته باشد (شروع سرد)، پاسخ همان `{"query": ..., "results": []}` است اما سرویس AI **فراخوانی نمی‌شود**: Embedding پرسش ساخته نمی‌شود چون نتیجه‌اش تغییرناپذیر است.
+
 ### `POST /api/query/search/`
 
 جست‌وجوی کامل با ذخیره تاریخچه و Audit. بدنه:
@@ -378,7 +380,9 @@ http://127.0.0.1:8000/api  +  /documents/30/file/  =  http://127.0.0.1:8000/api/
 }
 ```
 
-نتایج با `rerank_score > 0` فیلتر می‌شوند. در صورت موفقیت، `SearchQuery`، `QueryResult`ها و `AuditLog(SEARCH)` ثبت می‌شوند.
+نتایجی که Reranker امتیازشان را برنگردانده (`rerank_score == MISSING_RERANK_SCORE`) حذف می‌شوند. فیلتر `rerank_score > 0` عمداً استفاده نمی‌شود: امتیاز cross-encoder یک logit خام است و برای تطابق‌های معتبر هم منفی می‌شود، پس آن فیلتر همهٔ نتایج را دور می‌ریخت. در صورت موفقیت، `SearchQuery`، `QueryResult`ها و `AuditLog(SEARCH)` ثبت می‌شوند.
+
+در دپارتمان بدون Chunk، سرویس AI فراخوانی نمی‌شود و `results` خالی است؛ با این حال `SearchQuery` با صفر `QueryResult` ثبت می‌شود تا آمار جست‌وجو ناقص نماند.
 
 ### `POST /api/query/ask/`
 
