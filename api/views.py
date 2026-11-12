@@ -29,6 +29,7 @@ from .services import (
     MISSING_RERANK_SCORE,
     AIServiceError,
     AIServiceUnavailable,
+    department_has_searchable_content,
     generate_embeddings,
     hybrid_search,
     generate_rag_answer,
@@ -344,6 +345,20 @@ def semantic_search_view(request):
     if department_error:
         return department_error
 
+    # Cold start: `hybrid_search` asks the AI service for a query embedding
+    # before it searches. A department with no chunks can only ever get an
+    # empty list back, so that round trip is pure waste — and it is the same
+    # waste the answer path already refuses to pay. The response shape is
+    # unchanged: an empty list, exactly what the search would have produced.
+    if not department_has_searchable_content(request.user):
+        return Response(
+            {
+                "query": query,
+                "results": [],
+            },
+            status=status.HTTP_200_OK,
+        )
+
     try:
         # Database ownership is verified below before any result is returned.
         results = hybrid_search(
@@ -405,17 +420,24 @@ def search_query_view(request):
     if department_error:
         return department_error
 
-    try:
-        results = hybrid_search(
-            query_text,
-            limit=top_k,
-            user=request.user,
-        )
-    except Exception as exc:
-        return _ai_service_error_response(
-            exc,
-            "Search service unavailable",
-        )
+    # Same cold-start gate as the answer path: `hybrid_search` would ask the
+    # AI service for a query embedding that cannot match anything. The search
+    # is still recorded below with zero results, so the analytics stay
+    # complete — only the wasted round trip is skipped.
+    results = []
+
+    if department_has_searchable_content(request.user):
+        try:
+            results = hybrid_search(
+                query_text,
+                limit=top_k,
+                user=request.user,
+            )
+        except Exception as exc:
+            return _ai_service_error_response(
+                exc,
+                "Search service unavailable",
+            )
 
     results = _filter_tenant_search_results(results, request)
 

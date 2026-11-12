@@ -113,9 +113,17 @@ def test_semantic_search_returns_400_when_query_is_blank(admin_client):
 
 
 def test_semantic_search_returns_502_when_search_fails(admin_client):
-    with patch(
-        "api.views.hybrid_search",
-        side_effect=RuntimeError("Search service unavailable"),
+    # The cold-start gate would short-circuit before the search layer, and
+    # this test is about error propagation, so let the search run.
+    with (
+        patch(
+            "api.views.department_has_searchable_content",
+            return_value=True,
+        ),
+        patch(
+            "api.views.hybrid_search",
+            side_effect=RuntimeError("Search service unavailable"),
+        ),
     ):
         response = admin_client.post(
             "/api/search/",
@@ -216,9 +224,17 @@ def test_semantic_search_returns_results_from_direct_chunk_object(
 
 @pytest.mark.django_db
 def test_search_query_returns_502_when_search_fails(admin_client):
-    with patch(
-        "api.views.hybrid_search",
-        side_effect=RuntimeError("Search service unavailable"),
+    # Same as above: bypass the cold-start gate so the search layer is the
+    # thing under test.
+    with (
+        patch(
+            "api.views.department_has_searchable_content",
+            return_value=True,
+        ),
+        patch(
+            "api.views.hybrid_search",
+            side_effect=RuntimeError("Search service unavailable"),
+        ),
     ):
         response = admin_client.post(
             "/api/query/search/",

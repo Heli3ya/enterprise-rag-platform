@@ -31,6 +31,7 @@ from api.services import (
     generate_rag_answer,
     generate_rag_stream,
 )
+from documents.models import SearchQuery
 from tests.factories import (
     AdminFactory,
     DepartmentFactory,
@@ -276,3 +277,79 @@ def test_admin_sees_the_same_gate_as_a_member():
 
     post.assert_not_called()
     assert result["reason"] == EMPTY_DEPARTMENT
+
+
+# -- search-only endpoints ----------------------------------------------
+#
+# `/api/search/` and `/api/query/search/` never call the LLM, but
+# `hybrid_search` still asks the AI service for a query embedding before it
+# searches. In an empty department that round trip cannot change the answer,
+# so the same gate guards it.
+
+
+@pytest.mark.django_db
+def test_semantic_search_skips_the_ai_service_in_an_empty_department(
+    empty_department_user,
+):
+    with patch("api.services.requests.post") as post:
+        response = client_for(empty_department_user).post(
+            "/api/search/",
+            {"query": "What is the leave policy?"},
+            format="json",
+        )
+
+    post.assert_not_called()
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "query": "What is the leave policy?",
+        "results": [],
+    }
+
+
+@pytest.mark.django_db
+def test_query_search_skips_the_ai_service_in_an_empty_department(
+    empty_department_user,
+):
+    with patch("api.services.requests.post") as post:
+        response = client_for(empty_department_user).post(
+            "/api/query/search/",
+            {"query_text": "What is the leave policy?"},
+            format="json",
+        )
+
+    post.assert_not_called()
+
+    assert response.status_code == 200
+
+    body = response.json()
+    assert body["query_text"] == "What is the leave policy?"
+    assert body["results"] == []
+
+    # The search is still recorded: this endpoint feeds the analytics, and
+    # a query with zero results is a legitimate data point.
+    stored = SearchQuery.objects.get()
+    assert stored.user_id == empty_department_user.id
+    assert stored.results.count() == 0
+
+
+@pytest.mark.django_db
+def test_search_still_runs_when_the_department_has_chunks(populated_user):
+    """Regression guard: the gate must not swallow a real search."""
+
+    with (
+        patch(
+            "api.views.department_has_searchable_content",
+            return_value=True,
+        ),
+        patch("api.views.hybrid_search", return_value=[]) as search,
+    ):
+        response = client_for(populated_user).post(
+            "/api/search/",
+            {"query": "How much leave?"},
+            format="json",
+        )
+
+    search.assert_called_once()
+    assert response.status_code == 200
+
