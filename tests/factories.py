@@ -12,6 +12,21 @@ from api.models import ChatAnswer
 User = get_user_model()
 
 
+def create_department(tenant, name, creator=None):
+    """
+    Create a department the same way the API does.
+
+    Goes through the post_save signal (so the cold-start guide is
+    created when an author exists) and, when `creator` is given, through
+    the attribution scope the API uses.
+    """
+
+    from departments.signals import attributed_to
+
+    with attributed_to(creator):
+        return Department.objects.create(tenant=tenant, name=name)
+
+
 class TenantFactory(factory.django.DjangoModelFactory):
     class Meta:
         model = Tenant

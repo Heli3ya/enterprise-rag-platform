@@ -72,6 +72,31 @@ transaction.on_commit(lambda: process_document.delay(document.id))
 
 `transaction.on_commit` تضمین می‌کند وظیفه فقط پس از Commit تراکنش ارسال شود؛ در غیر این صورت worker ممکن است رکورد را پیدا نکند.
 
+### سند راهنمای خودکار (Onboarding)
+
+دپارتمان تازه هیچ سندی ندارد، پس هر پرسش به بن‌بست می‌خورد. برای همین هنگام ساخت هر دپارتمان یک سند راهنما ساخته می‌شود:
+
+- کد: `documents/onboarding.py` → `ensure_onboarding_document`
+- محرک: سیگنال `post_save` روی `Department` در `departments/signals.py`
+- متن: `build_onboarding_text` — راهنمای فارسی درباره آپلود، فرمت‌ها، وضعیت‌ها، جست‌وجو، استناد، حریم خصوصی و پرسش‌های رایج
+
+ترتیب کار:
+
+1. فایل متنی در `media/documents/tenant_<id>/onboarding-<dept_id>-<slug>.txt` نوشته می‌شود.
+2. ردیف `Document` با `is_system=True` و `status="Processing"` ساخته می‌شود.
+3. Chunkها **همگام** با همان `save_document_chunks` خط لوله اصلی ساخته می‌شوند (چند میلی‌ثانیه، بدون شبکه).
+4. Embeddingها **پس از Commit** با `generate_embedding_batch.delay` در صف قرار می‌گیرند.
+
+چرا این تفکیک مهم است: اگر Redis یا worker در دسترس نباشد، مرحله ۳ انجام شده است و سند از طریق نیمه کلیدواژه‌ای `hybrid_search` پیدا می‌شود؛ پس وعده «دپارتمان تازه هم حداقل به پرسش‌های پایه پاسخ می‌دهد» حتی در قطعی جزئی برقرار می‌ماند. اگر صف شکست بخورد فقط یک `logger.exception` ثبت می‌شود و سند در وضعیت `Processing` می‌ماند.
+
+نکات پیاده‌سازی:
+
+- تابع idempotent است: اگر دپارتمان از قبل سند `is_system` داشته باشد `None` برمی‌گرداند و Chunk تکراری نمی‌سازد.
+- کل بلوک سیگنال در `try/except` است؛ خطا در ساخت راهنما نباید ساخت دپارتمان را rollback کند.
+- نویسنده سند: مدیر سازنده از طریق `attributed_to(user)` در View، و در غیر آن اولین Admin فعال Tenant.
+- متن راهنما عمداً هیچ عددی داخل قلاب ندارد؛ `extract_citation_ids` هر `[12]` را استناد می‌گیرد و به Chunk بی‌ربط نگاشت می‌کند.
+- برای دپارتمان‌های قدیمی: `python manage.py seed_onboarding_docs --tenant-id 3 --dry-run` (بدون آرگومان: همه Tenantها).
+
 ## ۳. استخراج متن
 
 `documents/tasks.py` بر اساس `file_type` تصمیم می‌گیرد:

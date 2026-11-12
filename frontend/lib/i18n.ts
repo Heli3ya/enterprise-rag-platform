@@ -218,6 +218,28 @@ const FA: Record<string, string> = {
 		"اتصال به سرور برقرار نشد. دوباره تلاش کنید.",
 	"Could not send your feedback. Please try again.":
 		"ارسال بازخورد انجام نشد. دوباره تلاش کنید.",
+
+	// -- cold start / empty state -----------------------------------
+	"Your department has no documents yet": "دپارتمان شما هنوز سندی ندارد",
+	"The assistant answers only from documents in your department. Add the first one to get real answers — until then it answers from the platform guide.":
+		"دستیار فقط از اسناد دپارتمان شما پاسخ می‌دهد. اولین سند را اضافه کنید تا پاسخ‌های واقعی بگیرید؛ تا آن زمان پاسخ‌ها بر پایه راهنمای پلتفرم است.",
+	"Upload your first document": "آپلود اولین سند",
+	"Ask the assistant how to use the platform":
+		"از دستیار درباره نحوه استفاده از پلتفرم بپرسید",
+	"Already uploaded a file? Indexing takes a few moments.":
+		"قبلاً فایلی آپلود کرده‌اید؟ پردازش چند لحظه زمان می‌برد.",
+	"Refresh status": "بروزرسانی وضعیت",
+	"No document in your department covers this topic yet.":
+		"در حال حاضر سندی مرتبط با این موضوع در دپارتمان شما یافت نشد.",
+	"The assistant answers only from documents in your department. Upload the first one, or ask how the platform works.":
+		"دستیار فقط از اسناد دپارتمان شما پاسخ می‌دهد. اولین سند را آپلود کنید یا بپرسید پلتفرم چطور کار می‌کند.",
+	"Ask how the platform works": "بپرسید پلتفرم چطور کار می‌کند",
+	"Nothing in your knowledge base matched this question. Try different words, or upload a document that covers it.":
+		"هیچ سندی در پایگاه دانش شما با این پرسش مطابقت نداشت. کلمات دیگری را امتحان کنید یا سندی مرتبط آپلود کنید.",
+	"Try a different wording": "با کلمات دیگر بپرسید",
+	"Upload a document": "آپلود یک سند",
+	"System guide": "راهنمای سیستمی",
+	"Managed by the platform": "مدیریت‌شده توسط پلتفرم",
 };
 
 /**

@@ -46,6 +46,24 @@ async function mockSignedInSurface(page: Page) {
     });
   });
 
+  // The dashboard asks for department readiness on mount. Without a
+  // mock this request would reach the real API and a 401 would bounce
+  // the browser to /login.
+  await page.route(/\/departments\/readiness\/?$/, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        department_id: 1,
+        department_name: "IT",
+        document_count: 2,
+        has_searchable_content: true,
+        is_empty: false,
+        onboarding_document_id: 41,
+      }),
+    });
+  });
+
   await page.route(/\/documents\/?$/, async (route) => {
     await route.fulfill({
       status: 200,

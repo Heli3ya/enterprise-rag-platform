@@ -372,15 +372,22 @@ def test_rerank_results_sorts_by_score_and_handles_missing_scores():
     assert math.isfinite(reranked[2]["rerank_score"])
 
 
-def test_generate_rag_answer_returns_message_when_no_results():
+def test_generate_rag_answer_reports_no_documents_without_an_llm_call():
+    from api.services import EMPTY_DEPARTMENT, NO_DOCUMENTS_MESSAGE
     from api.services import generate_rag_answer
 
-    with patch("api.services.hybrid_search", return_value=[]):
+    # No user means no department scope, which is the coldest possible
+    # start: nothing can be retrieved, so nothing may be generated.
+    with patch("api.services.requests.post") as post:
         result = generate_rag_answer("annual leave")
 
+    post.assert_not_called()
+
     assert result == {
-        "answer": "No relevant documents were found.",
+        "answer": NO_DOCUMENTS_MESSAGE,
         "citations": [],
+        "no_documents": True,
+        "reason": EMPTY_DEPARTMENT,
     }
 
 
@@ -409,6 +416,10 @@ def test_generate_rag_answer_returns_answer_and_citations():
     }
 
     with (
+        patch(
+            "api.services.department_has_searchable_content",
+            return_value=True,
+        ),
         patch("api.services.hybrid_search", return_value=search_results),
         patch(
             "api.services.requests.post",
@@ -433,6 +444,10 @@ def test_generate_rag_answer_raises_error_when_response_is_missing():
 
     with (
         patch(
+            "api.services.department_has_searchable_content",
+            return_value=True,
+        ),
+        patch(
             "api.services.hybrid_search",
             return_value=[
                 {
@@ -450,17 +465,22 @@ def test_generate_rag_answer_raises_error_when_response_is_missing():
         generate_rag_answer("annual leave")
 
 
-def test_generate_rag_stream_returns_error_when_no_results():
+def test_generate_rag_stream_returns_no_documents_when_department_is_empty():
+    from api.services import EMPTY_DEPARTMENT, NO_DOCUMENTS_MESSAGE
     from api.services import generate_rag_stream
 
-    with patch("api.services.hybrid_search", return_value=[]):
+    with patch("api.services.requests.post") as post:
         events = list(generate_rag_stream("annual leave"))
+
+    post.assert_not_called()
 
     assert events == [
         {
-            "type": "error",
-            "message": "No relevant documents were found.",
-        }
+            "type": "no_documents",
+            "reason": EMPTY_DEPARTMENT,
+            "message": NO_DOCUMENTS_MESSAGE,
+        },
+        {"type": "done"},
     ]
 
 
@@ -485,6 +505,10 @@ def test_generate_rag_stream_emits_tokens_citations_and_done():
     ]
 
     with (
+        patch(
+            "api.services.department_has_searchable_content",
+            return_value=True,
+        ),
         patch(
             "api.services.hybrid_search",
             return_value=[

@@ -3,10 +3,16 @@
 import { useRef, useState } from "react";
 import { API_BASE_URL, authorizedFetch, readErrorMessage } from "../lib/api";
 import type { Citation } from "../lib/citations";
+import {
+	CHAT_INPUT_ID,
+	focusChatInput,
+	focusDocumentUploader,
+} from "../lib/focusTargets";
 import AnswerContent from "./AnswerContent";
 import AnswerFeedback from "./AnswerFeedback";
 import CitationList from "./CitationList";
 import CitationPanel from "./CitationPanel";
+import EmptyState from "./EmptyState";
 import { useT } from "./PreferencesProvider";
 
 /** Rendered through `t()` so the greeting follows the selected language. */
@@ -27,12 +33,61 @@ type Message = {
 	isStreaming?: boolean;
 	/** Set when the stream failed; a broken answer must not be rated. */
 	failed?: boolean;
+	/**
+	 * Set when the backend answered `no_documents`: there is no text,
+	 * no citation and nothing to rate, only an explanation and a way
+	 * forward.
+	 */
+	empty?: { reason: string };
 };
 
 type ActiveSource = {
 	citation: Citation;
 	query: string;
 };
+
+/**
+ * Copy for a `no_documents` answer.
+ *
+ * The two reasons need different advice: a department with no documents
+ * needs an upload, a populated one that missed only needs a rephrasing.
+ * Both keep a second action so the user is never at a dead end.
+ */
+function emptyStateProps(reason: string, t: (key: string) => string) {
+	const isColdDepartment = reason === "empty_department";
+
+	if (isColdDepartment) {
+		return {
+			title: t("Your department has no documents yet"),
+			description: t(
+				"The assistant answers only from documents in your department. Upload the first one, or ask how the platform works.",
+			),
+			primaryAction: {
+				label: t("Upload your first document"),
+				onClick: focusDocumentUploader,
+			},
+			secondaryAction: {
+				label: t("Ask how the platform works"),
+				onClick: focusChatInput,
+			},
+		};
+	}
+
+	return {
+		title: t("No document in your department covers this topic yet."),
+		description: t(
+			"Nothing in your knowledge base matched this question. Try different words, or upload a document that covers it.",
+		),
+		primaryAction: {
+			label: t("Try a different wording"),
+			onClick: focusChatInput,
+		},
+		secondaryAction: {
+			label: t("Upload a document"),
+			onClick: focusDocumentUploader,
+		},
+	};
+}
 
 export default function ChatWindow() {
 	const t = useT();
@@ -239,6 +294,29 @@ export default function ChatWindow() {
 						);
 					}
 
+					// Cold start: the backend stopped before the LLM. The
+					// bubble becomes an explanation instead of an answer.
+					if (eventType === "no_documents") {
+						const payload = data as { reason?: string };
+
+						setMessages((currentMessages) =>
+							currentMessages.map((message) => {
+								if (message.id !== assistantMessageId) {
+									return message;
+								}
+
+								return {
+									...message,
+									isLoading: false,
+									isStreaming: false,
+									empty: {
+										reason: payload.reason ?? "no_match",
+									},
+								};
+							}),
+						);
+					}
+
 					if (eventType === "done") {
 						setMessages((currentMessages) =>
 							currentMessages.map((message) => {
@@ -339,7 +417,12 @@ export default function ChatWindow() {
 									{message.role === "user" ? t("You") : t("Assistant")}
 								</p>
 
-								{message.content ? (
+								{message.empty ? (
+									<EmptyState
+										variant="inline"
+										{...emptyStateProps(message.empty.reason, t)}
+									/>
+								) : message.content ? (
 									message.role === "assistant" ? (
 										<AnswerContent
 											content={
@@ -377,11 +460,13 @@ export default function ChatWindow() {
 									)}
 
 								{/* Only a finished, successful answer can be rated:
-								    a failed stream has no stored row to attach to. */}
+								    a failed stream has no stored row to attach to,
+								    and a "no documents" answer has no row at all. */}
 								{message.role === "assistant" &&
 									message.answerId &&
 									!message.isStreaming &&
-									!message.failed && (
+									!message.failed &&
+									!message.empty && (
 										<AnswerFeedback answerId={message.answerId} />
 									)}
 							</div>
@@ -393,6 +478,7 @@ export default function ChatWindow() {
 			<div className="border-t border-gray-200 bg-white p-4">
 				<div className="flex items-end gap-3">
 					<textarea
+						id={CHAT_INPUT_ID}
 						value={input}
 						onChange={(event) => setInput(event.target.value)}
 						onKeyDown={handleKeyDown}

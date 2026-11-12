@@ -86,6 +86,24 @@ test("member completes upload, chat, and citation flow", async ({ page }) => {
     });
   });
 
+  // Cold-start probe fired by the dashboard. A department with real
+  // documents keeps the empty state hidden, and mocking it keeps the
+  // request away from the real API (a 401 would bounce to /login).
+  await page.route(/\/departments\/readiness\/?$/, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        department_id: 1,
+        department_name: "IT",
+        document_count: 3,
+        has_searchable_content: true,
+        is_empty: false,
+        onboarding_document_id: 41,
+      }),
+    });
+  });
+
   // Mock document listing and upload.
   await page.route(/\/documents\/?$/, async (route) => {
     if (route.request().method() === "POST") {
