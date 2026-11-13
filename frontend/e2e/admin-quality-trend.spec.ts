@@ -62,7 +62,32 @@ const metricsPayload = {
 		trendPoint("2026-10-17", 6, 5),
 		trendPoint("2026-10-18", 8, 6),
 	],
-	by_department: [],
+	by_department: [
+		{
+			department_id: 1,
+			department_name: "IT",
+			rated: 5,
+			positive: 2,
+			negative: 3,
+			satisfaction_rate: 40,
+		},
+		{
+			department_id: 2,
+			department_name: "HR",
+			rated: 2,
+			positive: 2,
+			negative: 0,
+			satisfaction_rate: 100,
+		},
+		{
+			department_id: 3,
+			department_name: "Knowledge Base",
+			rated: 0,
+			positive: 0,
+			negative: 0,
+			satisfaction_rate: null,
+		},
+	],
 };
 
 async function signInAsAdmin(page: Page) {
@@ -169,6 +194,7 @@ test("a null rate is shown as no data, never as zero percent", async ({
 				negative_with_comment: 0,
 			},
 			trend: [trendPoint("2026-10-15", 0, 0)],
+			by_department: [],
 		},
 	});
 
@@ -176,6 +202,30 @@ test("a null rate is shown as no data, never as zero percent", async ({
 
 	await expect(page.getByTestId("quality-satisfaction-rate")).toHaveText("—");
 	await expect(page.getByTestId("quality-trend-empty")).toBeVisible();
+});
+
+test("the breakdown names the worst department first and the unrated last", async ({
+	page,
+}) => {
+	await signInAsAdmin(page);
+	await mockAdminSurface(page);
+
+	await page.goto("/admin");
+
+	const rows = page.getByTestId("quality-department-row");
+	await expect(rows).toHaveCount(3);
+
+	// 40% before 100%, even though HR sorts first alphabetically: the
+	// list is a work queue, not a directory.
+	await expect(rows.nth(0)).toContainText("IT");
+	await expect(rows.nth(0)).toContainText("40.0%");
+	await expect(rows.nth(0)).toContainText("3 negative");
+	await expect(rows.nth(1)).toContainText("HR");
+
+	// No ratings is "—", never 0%: a department nobody rated is not a
+	// department that failed.
+	await expect(rows.nth(2)).toContainText("Knowledge Base");
+	await expect(rows.nth(2)).toContainText("—");
 });
 
 test("switching the window refetches with the requested number of days", async ({

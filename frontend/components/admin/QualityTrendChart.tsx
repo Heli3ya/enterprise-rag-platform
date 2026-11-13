@@ -13,6 +13,7 @@ import {
 	YAxis,
 } from "recharts";
 import {
+	type DepartmentQuality,
 	formatRate,
 	QUALITY_RANGES,
 	type QualityMetrics,
@@ -52,6 +53,73 @@ function formatPercent(value: unknown): string {
 	if (typeof value !== "number") return "—";
 
 	return `${value.toFixed(1)}%`;
+}
+
+/**
+ * The "where" half of the KPI.
+ *
+ * A tenant-wide 40% is not actionable on its own: it can mean one
+ * department is failing badly or every department is slightly unhappy.
+ * Sorting worst-first turns the panel into a queue, and departments
+ * with no ratings sink to the bottom instead of pretending to be 0%.
+ */
+function DepartmentQualityList({ rows }: { rows: DepartmentQuality[] }) {
+	const t = useT();
+
+	const ordered = [...rows].sort((a, b) => {
+		if (a.satisfaction_rate === null && b.satisfaction_rate === null) {
+			return a.department_name.localeCompare(b.department_name);
+		}
+
+		if (a.satisfaction_rate === null) return 1;
+		if (b.satisfaction_rate === null) return -1;
+
+		return a.satisfaction_rate - b.satisfaction_rate;
+	});
+
+	return (
+		<div className="mt-6 border-t border-gray-100 pt-5">
+			<div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+				<h3 className="text-sm font-semibold text-gray-800">
+					{t("Quality by department")}
+				</h3>
+				<p className="text-xs text-gray-500">
+					{t("Worst first — where the wrong answers come from")}
+				</p>
+			</div>
+
+			<ul
+				data-testid="quality-by-department"
+				className="mt-2 divide-y divide-gray-100"
+			>
+				{ordered.map((row) => (
+					<li
+						key={row.department_id}
+						data-testid="quality-department-row"
+						className="flex items-center justify-between gap-3 py-2"
+					>
+						<span className="truncate text-sm text-gray-700">
+							{row.department_name}
+						</span>
+
+						<span className="flex shrink-0 items-center gap-3 text-xs text-gray-500">
+							<span>{t("{count} ratings", { count: row.rated })}</span>
+							<span className="text-red-600">
+								{t("{count} negative", { count: row.negative })}
+							</span>
+							<span
+								className={`min-w-12 text-right text-sm font-semibold tabular-nums ${
+									toneClasses[rateTone(row.satisfaction_rate)]
+								}`}
+							>
+								{formatRate(row.satisfaction_rate)}
+							</span>
+						</span>
+					</li>
+				))}
+			</ul>
+		</div>
+	);
 }
 
 /**
@@ -279,6 +347,10 @@ export default function QualityTrendChart({
 					</p>
 				)}
 			</div>
+
+			{hasData && (metrics?.by_department.length ?? 0) > 0 ? (
+				<DepartmentQualityList rows={metrics?.by_department ?? []} />
+			) : null}
 		</section>
 	);
 }

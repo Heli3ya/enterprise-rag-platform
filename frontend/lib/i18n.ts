@@ -260,6 +260,11 @@ const FA: Record<string, string> = {
 		"بازخورد ÷ پاسخ‌های ارائه‌شده ({count})",
 	"No ratings in this window yet. The trend appears as soon as users rate an answer.":
 		"در این بازه هنوز بازخوردی ثبت نشده است. روند به‌محض ثبت اولین بازخورد نمایش داده می‌شود.",
+	"Quality by department": "کیفیت به تفکیک دپارتمان",
+	"Worst first — where the wrong answers come from":
+		"بدترین‌ها اول — اینجا مشخص می‌شود پاسخ‌های اشتباه از کجا آمده‌اند",
+	"{count} ratings": "{count} بازخورد",
+	"{count} negative": "{count} منفی",
 	"Could not load the quality metrics. Please try again.":
 		"بارگذاری شاخص‌های کیفیت انجام نشد. دوباره تلاش کنید.",
 	"Answers rated thumbs down": "پاسخ‌هایی که بازخورد منفی گرفته‌اند",
