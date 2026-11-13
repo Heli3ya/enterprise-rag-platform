@@ -110,7 +110,7 @@ async function mockSignedInSurface(
       },
       body:
         'event: meta\ndata: {"answer_id":null,"conversation_id":"cold-e2e"}\n\n' +
-        'event: no_documents\ndata: {"reason":"empty_department","message":"در حال حاضر سندی مرتبط با این موضوع در دپارتمان شما یافت نشد."}\n\n' +
+        'event: no_documents\ndata: {"reason":"empty_department","message":"در حال حاضر سندی مرتبط با این موضوع در دپارتمان شما یافت نشد"}\n\n' +
         "event: done\ndata: {}\n\n",
     });
   });

@@ -40,7 +40,7 @@ NO_MATCHING_CHUNKS = "no_match"
 # its own copy off `reason`, so this string is a fallback, not the UI
 # text.
 NO_DOCUMENTS_MESSAGE = (
-    "در حال حاضر سندی مرتبط با این موضوع در دپارتمان شما یافت نشد."
+    "در حال حاضر سندی مرتبط با این موضوع در دپارتمان شما یافت نشد"
 )
 
 
