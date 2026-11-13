@@ -422,7 +422,7 @@ http://127.0.0.1:8000/api  +  /documents/30/file/  =  http://127.0.0.1:8000/api/
 ```json
 {
   "query_text": "What is the parental leave policy?",
-  "answer": "در حال حاضر سندی مرتبط با این موضوع در دپارتمان شما یافت نشد.",
+  "answer": "در حال حاضر سندی مرتبط با این موضوع در دپارتمان شما یافت نشد",
   "citations": [],
   "answer_id": null,
   "no_documents": true,
@@ -472,7 +472,7 @@ event: meta
 data: {"answer_id":"...","conversation_id":"conversation-123"}
 
 event: no_documents
-data: {"reason":"empty_department","message":"در حال حاضر سندی مرتبط با این موضوع در دپارتمان شما یافت نشد."}
+data: {"reason":"empty_department","message":"در حال حاضر سندی مرتبط با این موضوع در دپارتمان شما یافت نشد"}
 
 event: done
 data: {}

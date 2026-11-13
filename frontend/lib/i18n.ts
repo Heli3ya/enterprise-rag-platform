@@ -230,7 +230,7 @@ const FA: Record<string, string> = {
 		"قبلاً فایلی آپلود کرده‌اید؟ پردازش چند لحظه زمان می‌برد.",
 	"Refresh status": "بروزرسانی وضعیت",
 	"No document in your department covers this topic yet.":
-		"در حال حاضر سندی مرتبط با این موضوع در دپارتمان شما یافت نشد.",
+		"در حال حاضر سندی مرتبط با این موضوع در دپارتمان شما یافت نشد",
 	"The assistant answers only from documents in your department. Upload the first one, or ask how the platform works.":
 		"دستیار فقط از اسناد دپارتمان شما پاسخ می‌دهد. اولین سند را آپلود کنید یا بپرسید پلتفرم چطور کار می‌کند.",
 	"Ask how the platform works": "بپرسید پلتفرم چطور کار می‌کند",
