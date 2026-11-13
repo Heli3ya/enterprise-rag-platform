@@ -227,6 +227,22 @@ export default function QualityTrendChart({
 					<p className="mt-1 text-xs text-gray-500">
 						{t("Positive ratings ÷ ratings received")}
 					</p>
+
+					{/* The brief asks for positive ÷ all answers. That number
+					    is a different question — it falls when nobody rates —
+					    so it is shown as a secondary line rather than as the
+					    headline, which would punish an unrated answer. */}
+					{metrics?.totals.positive_share_of_answers !== null &&
+					metrics?.totals.positive_share_of_answers !== undefined ? (
+						<p
+							data-testid="quality-positive-share"
+							className="mt-0.5 text-xs text-gray-400"
+						>
+							{t("{rate} of all delivered answers", {
+								rate: formatRate(metrics.totals.positive_share_of_answers),
+							})}
+						</p>
+					) : null}
 				</div>
 
 				<div className="rounded-lg border border-gray-100 bg-gray-50 p-4">

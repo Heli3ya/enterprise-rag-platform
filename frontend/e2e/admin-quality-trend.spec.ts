@@ -174,6 +174,12 @@ test("the panel shows the satisfaction rate and the counts behind it", async ({
 
 	// The number alone is not enough: 29 of 40 must be visible.
 	await expect(trend).toContainText("29");
+
+	// The brief's literal metric — positive ÷ all answers — is the
+	// secondary line, not the headline.
+	await expect(page.getByTestId("quality-positive-share")).toHaveText(
+		"18.1% of all delivered answers",
+	);
 });
 
 test("a null rate is shown as no data, never as zero percent", async ({

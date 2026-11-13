@@ -250,6 +250,7 @@ const FA: Record<string, string> = {
 	"Satisfaction rate": "درصد رضایت",
 	"Positive ratings ÷ ratings received":
 		"بازخورد مثبت ÷ کل بازخوردهای دریافتی",
+	"{rate} of all delivered answers": "{rate} از کل پاسخ‌های ارائه‌شده",
 	"Ratings received": "بازخوردهای دریافتی",
 	"Thumbs up {positive} · thumbs down {negative}":
 		"مثبت {positive} · منفی {negative}",
