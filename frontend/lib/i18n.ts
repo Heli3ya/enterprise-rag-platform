@@ -240,6 +240,50 @@ const FA: Record<string, string> = {
 	"Upload a document": "آپلود یک سند",
 	"System guide": "راهنمای سیستمی",
 	"Managed by the platform": "مدیریت‌شده توسط پلتفرم",
+
+	// -- admin quality dashboard -------------------------------------
+	"Answer quality trend": "روند کیفیت پاسخ‌ها",
+	"Satisfaction rate per period, with the number of ratings behind it":
+		"درصد رضایت در هر بازه، همراه با تعداد بازخوردهای پشت آن",
+	"Reporting window": "بازه گزارش",
+	"{count} days": "{count} روز",
+	"Satisfaction rate": "درصد رضایت",
+	"Positive ratings ÷ ratings received":
+		"بازخورد مثبت ÷ کل بازخوردهای دریافتی",
+	"Ratings received": "بازخوردهای دریافتی",
+	"Thumbs up {positive} · thumbs down {negative}":
+		"مثبت {positive} · منفی {negative}",
+	"Answers with a negative verdict": "پاسخ‌های با بازخورد منفی",
+	"{count} of them left a comment": "{count} مورد از آن‌ها نظر نوشته‌اند",
+	"Rating coverage": "پوشش بازخورد",
+	"Ratings ÷ answers delivered ({count})":
+		"بازخورد ÷ پاسخ‌های ارائه‌شده ({count})",
+	"No ratings in this window yet. The trend appears as soon as users rate an answer.":
+		"در این بازه هنوز بازخوردی ثبت نشده است. روند به‌محض ثبت اولین بازخورد نمایش داده می‌شود.",
+	"Could not load the quality metrics. Please try again.":
+		"بارگذاری شاخص‌های کیفیت انجام نشد. دوباره تلاش کنید.",
+	"Answers rated thumbs down": "پاسخ‌هایی که بازخورد منفی گرفته‌اند",
+	"Read what went wrong, with the question, the answer and the user's comment":
+		"ببینید چه چیزی اشتباه بوده: پرسش، پاسخ و نظر کاربر",
+	"{count} in total": "{count} مورد در کل",
+	"Search feedback": "جست‌وجوی بازخورد",
+	"Search the question, the answer or the comment":
+		"جست‌وجو در پرسش، پاسخ یا نظر کاربر",
+	"All departments": "همه دپارتمان‌ها",
+	"With a comment only": "فقط دارای نظر",
+	"No thumbs-down in this window. Either quality is fine or nobody is rating.":
+		"در این بازه بازخورد منفی ثبت نشده است؛ یا کیفیت مناسب است یا کسی بازخورد نمی‌دهد.",
+	"Could not load the feedback list. Please try again.":
+		"بارگذاری فهرست بازخوردها انجام نشد. دوباره تلاش کنید.",
+	"User comment": "نظر کاربر",
+	"No comment": "بدون نظر",
+	"Show the answer": "نمایش پاسخ",
+	"{count} citations": "{count} منبع",
+	"Showing {from}–{to} of {total}": "نمایش {from}–{to} از {total}",
+	"Previous": "قبلی",
+	"Next": "بعدی",
+	"Question": "پرسش",
+	"Answer": "پاسخ",
 };
 
 /**

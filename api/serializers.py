@@ -83,6 +83,63 @@ class AnswerFeedbackSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
+class NegativeFeedbackSerializer(serializers.ModelSerializer):
+    """
+    One row of the admin "what went wrong" grid.
+
+    The question and answer text are included on purpose: a thumbs-down
+    with no context is not actionable, and the admin is the one person
+    allowed to read another user's question in full. `citation_count`
+    lets them tell "the model had no source" apart from "the model
+    ignored the source it had".
+    """
+
+    answer_id = serializers.UUIDField(read_only=True)
+    question = serializers.CharField(
+        source="answer.question",
+        read_only=True,
+    )
+    answer_text = serializers.CharField(
+        source="answer.answer",
+        read_only=True,
+    )
+    username = serializers.CharField(source="user.username", read_only=True)
+    department_id = serializers.SerializerMethodField()
+    department_name = serializers.SerializerMethodField()
+    citation_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = AnswerFeedback
+        fields = [
+            "id",
+            "answer_id",
+            "question",
+            "answer_text",
+            "user_comment",
+            "username",
+            "department_id",
+            "department_name",
+            "citation_count",
+            "created_at",
+        ]
+        read_only_fields = fields
+
+    def get_department_id(self, obj):
+        department = obj.answer.user.department
+
+        return department.id if department else None
+
+    def get_department_name(self, obj):
+        department = obj.answer.user.department
+
+        return department.name if department else None
+
+    def get_citation_count(self, obj):
+        citations = obj.answer.citations
+
+        return len(citations) if isinstance(citations, list) else 0
+
+
 class AuditLogSerializer(serializers.ModelSerializer):
     class Meta:
         model = AuditLog
