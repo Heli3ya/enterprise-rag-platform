@@ -6,7 +6,7 @@ import uuid
 import requests
 from django.conf import settings
 from django.db import models, transaction
-from django.db.models import Sum, Count
+from django.db.models import Q, Sum, Count
 from django.db import connection as db_connection
 from django.db.utils import IntegrityError
 from django.http import StreamingHttpResponse
@@ -25,6 +25,13 @@ from drf_spectacular.utils import extend_schema, OpenApiResponse
 
 from .throttles import ChatUserRateThrottle, FeedbackUserRateThrottle
 from .permissions import IsAdminUser
+from .pagination import AdminListPagination
+from .quality import (
+    InvalidWindow,
+    get_quality_metrics,
+    invalidate_quality_metrics,
+    parse_window_days,
+)
 from .services import (
     MISSING_RERANK_SCORE,
     AIServiceError,
@@ -39,6 +46,7 @@ from .serializers import (
     AnswerFeedbackSerializer,
     ChatAskSerializer,
     FeedbackCreateSerializer,
+    NegativeFeedbackSerializer,
     RagQuerySerializer,
     SearchQuerySerializer,
 )
@@ -110,6 +118,42 @@ def _department_required_response(request):
         )
 
     return None
+
+
+def _resolve_department_filter(request, tenant_id):
+    """
+    Read `?department_id=` for the admin quality endpoints.
+
+    Returns `(department_id, error_response)`. An unknown id is answered
+    with 404 rather than 403 so the caller cannot use this endpoint to
+    probe which department ids exist in other organisations.
+    """
+
+    raw_value = request.query_params.get("department_id")
+
+    if raw_value in (None, ""):
+        return None, None
+
+    try:
+        department_id = int(raw_value)
+    except (TypeError, ValueError):
+        return None, Response(
+            {"error": "department_id must be an integer."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    exists = Department.objects.filter(
+        id=department_id,
+        tenant_id=tenant_id,
+    ).exists()
+
+    if not exists:
+        return None, Response(
+            {"error": "Department not found."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    return department_id, None
 
 
 def _ai_service_error_response(exc, fallback_message):
@@ -830,6 +874,12 @@ def chat_feedback_view(request):
             status=status.HTTP_409_CONFLICT,
         )
 
+    # The dashboard caches its aggregates, so a fresh verdict would sit
+    # invisible for up to a minute. Retire the cached windows now; the
+    # call swallows its own failures so a cache outage cannot cost the
+    # user their rating.
+    invalidate_quality_metrics(request.user.tenant_id)
+
     return Response(
         AnswerFeedbackSerializer(feedback).data,
         status=status.HTTP_201_CREATED,
@@ -1004,6 +1054,149 @@ def admin_analytics_view(request):
         },
         status=status.HTTP_200_OK,
     )
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated, IsAdminUser])
+def quality_metrics_view(request):
+    """
+    Answer-quality metrics for one tenant.
+
+    Query parameters: `days` (1..365, default 30) and an optional
+    `department_id`. The response carries the headline percentages, the
+    per-bucket trend the chart plots, and the same numbers split by
+    department.
+
+    Rates are `null` when their denominator is zero — the frontend must
+    be able to tell "nobody rated anything" from "everybody hated it".
+    """
+
+    tenant_error = _tenant_required_response(request)
+    if tenant_error:
+        return tenant_error
+
+    tenant_id = _get_tenant_id(request)
+
+    try:
+        days = parse_window_days(request.query_params.get("days"))
+    except InvalidWindow as exc:
+        return Response(
+            {"error": str(exc)},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    department_id, department_error = _resolve_department_filter(
+        request,
+        tenant_id,
+    )
+
+    if department_error:
+        return department_error
+
+    return Response(
+        get_quality_metrics(tenant_id, days, department_id),
+        status=status.HTTP_200_OK,
+    )
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated, IsAdminUser])
+def quality_feedback_view(request):
+    """
+    Paginated list of answers that received a thumbs-down.
+
+    Every row carries the question, the answer, the user's comment and
+    the department that asked, which is what turns "our score is 62%"
+    into "the Finance department keeps getting wrong answers about
+    reimbursements".
+
+    Filters: `department_id`, `date_from`, `date_to`, `search` (matches
+    the comment, the question or the answer) and `has_comment`.
+    Pagination: `page`, `page_size` (max 100).
+    """
+
+    tenant_error = _tenant_required_response(request)
+    if tenant_error:
+        return tenant_error
+
+    tenant_id = _get_tenant_id(request)
+
+    department_id, department_error = _resolve_department_filter(
+        request,
+        tenant_id,
+    )
+
+    if department_error:
+        return department_error
+
+    # `select_related` is what keeps this at two queries (count + page)
+    # instead of four per row: the serializer touches the feedback's
+    # user, the answer, and the answer author's department.
+    queryset = (
+        AnswerFeedback.objects
+        .filter(
+            tenant_id=tenant_id,
+            is_positive=False,
+        )
+        .select_related(
+            "user",
+            "answer",
+            "answer__user__department",
+        )
+    )
+
+    if department_id is not None:
+        queryset = queryset.filter(
+            answer__user__department_id=department_id,
+        )
+
+    date_from = request.query_params.get("date_from")
+    if date_from:
+        parsed_date_from = parse_date(date_from)
+
+        if parsed_date_from is None:
+            return Response(
+                {"error": "Invalid date_from format. Use YYYY-MM-DD."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        queryset = queryset.filter(created_at__date__gte=parsed_date_from)
+
+    date_to = request.query_params.get("date_to")
+    if date_to:
+        parsed_date_to = parse_date(date_to)
+
+        if parsed_date_to is None:
+            return Response(
+                {"error": "Invalid date_to format. Use YYYY-MM-DD."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        queryset = queryset.filter(created_at__date__lte=parsed_date_to)
+
+    search = (request.query_params.get("search") or "").strip()
+    if search:
+        queryset = queryset.filter(
+            Q(user_comment__icontains=search)
+            | Q(answer__question__icontains=search)
+            | Q(answer__answer__icontains=search)
+        )
+
+    has_comment = request.query_params.get("has_comment")
+    if has_comment in ("true", "True", "1"):
+        queryset = queryset.exclude(user_comment="")
+    elif has_comment in ("false", "False", "0"):
+        queryset = queryset.filter(user_comment="")
+
+    paginator = AdminListPagination()
+    page = paginator.paginate_queryset(
+        queryset,
+        request,
+        view=quality_feedback_view,
+    )
+    serializer = NegativeFeedbackSerializer(page, many=True)
+
+    return paginator.get_paginated_response(serializer.data)
 
 
 @api_view(["GET"])

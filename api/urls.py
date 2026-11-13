@@ -14,6 +14,8 @@ from .views import (
     chat_feedback_view,
     audit_logs_view,
     admin_analytics_view,
+    quality_metrics_view,
+    quality_feedback_view,
     current_user_view,
     health_view,
 )
@@ -31,4 +33,14 @@ urlpatterns = [
     path("chat/feedback/", chat_feedback_view, name="chat_feedback"),
     path("audit-logs/", audit_logs_view, name="audit_logs"),
     path("admin/analytics/", admin_analytics_view, name="admin_analytics"),
+    path(
+        "admin/quality-metrics/",
+        quality_metrics_view,
+        name="quality_metrics",
+    ),
+    path(
+        "admin/quality-feedback/",
+        quality_feedback_view,
+        name="quality_feedback",
+    ),
 ]

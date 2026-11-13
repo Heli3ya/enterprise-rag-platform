@@ -643,6 +643,108 @@ curl -X POST http://127.0.0.1:8000/api/chat/feedback/ \
 
 `recent_searches` حداکثر ۱۰ مورد آخر است.
 
+### `GET /api/admin/quality-metrics/`
+
+فقط `Admin`. شاخص‌های کیفیت پاسخ‌ها برای داشبورد پایش.
+
+| پارامتر | نوع | پیش‌فرض | توضیح |
+|---|---|---|---|
+| `days` | int | `30` | طول بازه، بین ۱ و ۳۶۵ |
+| `department_id` | int | — | محدودکردن همهٔ بخش‌ها به یک دپارتمان |
+
+```json
+{
+  "window": {
+    "days": 30,
+    "date_from": "2026-10-15",
+    "date_to": "2026-11-13",
+    "granularity": "day"
+  },
+  "totals": {
+    "answers": 160,
+    "rated": 40,
+    "positive": 29,
+    "negative": 11,
+    "satisfaction_rate": 72.5,
+    "response_rate": 25.0,
+    "positive_share_of_answers": 18.1,
+    "negative_with_comment": 4
+  },
+  "trend": [
+    {
+      "date": "2026-10-15",
+      "rated": 4,
+      "positive": 3,
+      "negative": 1,
+      "satisfaction_rate": 75.0
+    }
+  ],
+  "by_department": [
+    {
+      "department_id": 1,
+      "department_name": "IT",
+      "rated": 12,
+      "positive": 10,
+      "negative": 2,
+      "satisfaction_rate": 83.3
+    }
+  ]
+}
+```
+
+سه تعریف که باید کنار هم خوانده شوند:
+
+- `satisfaction_rate` = `positive ÷ rated`. پاسخ بدون بازخورد رأیی ندارد؛ اگر آن را شکست حساب کنیم، هر رشد استفاده درصد رضایت را پایین می‌آورد.
+- `response_rate` = `rated ÷ answers`. این نرخ «مشارکت در بازخورد» است، نه کیفیت، و برای همین جدا گزارش می‌شود.
+- `positive_share_of_answers` = `positive ÷ answers`. همان تقسیم «مثبت بر کل پاسخ‌ها» که اگر معیار سخت‌گیرانه‌تری خواسته شود در دسترس است.
+
+هر سه نرخ وقتی مخرج صفر باشد `null` برمی‌گردانند، نه `0.0`؛ رابط کاربری باید «داده‌ای نیست» را از «صفر درصد» تفکیک کند.
+
+`trend` یک نقطه برای هر سطل زمانی دارد: روزانه تا ۹۲ روز، و بعد از آن هفتگی (حداکثر ۵۴ نقطه در سال). روزهای بدون بازخورد با `satisfaction_rate: null` می‌آیند تا خط نمودار در آن بازه شکسته شود، نه اینکه تا صفر سقوط کند.
+
+`by_department` همهٔ دپارتمان‌های سازمان را برمی‌گرداند، حتی آن‌هایی که هیچ بازخوردی ندارند. پاسخ‌ها به دپارتمانِ **پرسش‌کننده** نسبت داده می‌شوند، نه به دپارتمانی که سند از آن آمده است. (کاربر بدون دپارتمان اصلاً نمی‌تواند بپرسد — `chat/ask/` با ۴۰۳ رد می‌کند — پس مجموع تفکیک دپارتمان همیشه با `totals.rated` برابر است.)
+
+نتیجه ۶۰ ثانیه در Redis کش می‌شود و با ثبت هر بازخورد جدید باطل می‌گردد.
+
+### `GET /api/admin/quality-feedback/`
+
+فقط `Admin`. فهرست صفحه‌بندی‌شدهٔ پاسخ‌هایی که بازخورد منفی گرفته‌اند.
+
+| پارامتر | نوع | پیش‌فرض | توضیح |
+|---|---|---|---|
+| `page` | int | `1` | شمارهٔ صفحه |
+| `page_size` | int | `20` | حداکثر ۱۰۰ |
+| `department_id` | int | — | فیلتر دپارتمان پرسش‌کننده |
+| `date_from` / `date_to` | `YYYY-MM-DD` | — | بازهٔ تاریخ بازخورد |
+| `search` | string | — | جست‌وجو در متن نظر، پرسش و پاسخ |
+| `has_comment` | bool | — | فقط ردیف‌های دارای نظر |
+
+```json
+{
+  "count": 11,
+  "next": "http://127.0.0.1:8000/api/admin/quality-feedback/?page=2",
+  "previous": null,
+  "results": [
+    {
+      "id": 7,
+      "answer_id": "5b1f7f0e-9c2a-4a41-9f0e-2f4a1b6c7d80",
+      "question": "What is the notice period?",
+      "answer_text": "The notice period is 60 days.",
+      "user_comment": "It is 30 days for employees.",
+      "username": "member1",
+      "department_id": 1,
+      "department_name": "IT",
+      "citation_count": 2,
+      "created_at": "2026-11-12T09:30:00Z"
+    }
+  ]
+}
+```
+
+متن کامل پرسش و پاسخ عمداً همراه ردیف می‌آید: بازخورد منفی بدون زمینه قابل اقدام نیست. `citation_count` این تفکیک را ممکن می‌کند که «مدل سندی نداشت» از «مدل سند را نادیده گرفت» جدا شود.
+
+هزینهٔ هر صفحه ثابت است (یک کوئری شمارش + یک کوئری صفحه) و با تعداد ردیف‌ها رشد نمی‌کند.
+
 ## ۸. مسیرهای سیستمی
 
 | مسیر | توضیح |

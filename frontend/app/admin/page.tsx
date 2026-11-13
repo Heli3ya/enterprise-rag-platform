@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
 	Bar,
 	BarChart,
@@ -14,8 +14,15 @@ import {
 	XAxis,
 	YAxis,
 } from "recharts";
-import api from "../../lib/api";
+import NegativeFeedbackGrid from "../../components/admin/NegativeFeedbackGrid";
+import QualityTrendChart from "../../components/admin/QualityTrendChart";
 import { useT } from "../../components/PreferencesProvider";
+import api from "../../lib/api";
+import {
+	fetchQualityMetrics,
+	type QualityMetrics,
+	type QualityRange,
+} from "../../lib/quality";
 
 type DepartmentStat = {
 	department_id: number;
@@ -76,6 +83,15 @@ export default function AdminDashboardPage() {
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState("");
 
+	// Quality metrics live in their own request and their own state. A
+	// failure there must not blank out the document dashboard, and a
+	// window switch must not refetch the documents.
+	const [qualityRange, setQualityRange] = useState<QualityRange>(30);
+	const [quality, setQuality] = useState<QualityMetrics | null>(null);
+	const [qualityLoading, setQualityLoading] = useState(true);
+	const [qualityError, setQualityError] = useState("");
+	const qualityRequest = useRef(0);
+
 	useEffect(() => {
 		let active = true;
 
@@ -111,7 +127,50 @@ export default function AdminDashboardPage() {
 		return () => {
 			active = false;
 		};
-	}, [router]);
+	}, [router, t]);
+
+	/**
+	 * Latest-wins fetch: a slow 90-day response must not overwrite a
+	 * fast 7-day one the admin asked for afterwards. The counter is the
+	 * guard, so no stale closure can land out of order.
+	 */
+	const loadQuality = useCallback(async () => {
+		qualityRequest.current += 1;
+		const requestId = qualityRequest.current;
+
+		setQualityLoading(true);
+		setQualityError("");
+
+		try {
+			const payload = await fetchQualityMetrics(qualityRange);
+
+			if (qualityRequest.current === requestId) {
+				setQuality(payload);
+			}
+		} catch (err) {
+			console.error("Failed to load quality metrics:", err);
+
+			if (qualityRequest.current === requestId) {
+				setQualityError(
+					t("Could not load the quality metrics. Please try again."),
+				);
+			}
+		} finally {
+			if (qualityRequest.current === requestId) {
+				setQualityLoading(false);
+			}
+		}
+	}, [qualityRange, t]);
+
+	useEffect(() => {
+		// Wait for the role check: a member would otherwise trigger a
+		// guaranteed 403 before being redirected.
+		if (!analytics) {
+			return;
+		}
+
+		void loadQuality();
+	}, [analytics, loadQuality]);
 
 	if (loading) {
 		return (
@@ -190,6 +249,15 @@ export default function AdminDashboardPage() {
 						</p>
 					</article>
 				</section>
+
+				<QualityTrendChart
+					metrics={quality}
+					range={qualityRange}
+					onRangeChange={setQualityRange}
+					loading={qualityLoading}
+					error={qualityError}
+					onRetry={() => void loadQuality()}
+				/>
 
 				<section className="grid grid-cols-1 gap-6 xl:grid-cols-2">
 					<article className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
@@ -296,9 +364,7 @@ export default function AdminDashboardPage() {
 								<thead>
 									<tr className="border-b border-gray-200 text-gray-500">
 										<th className="px-3 py-3 font-medium">{t("User")}</th>
-										<th className="px-3 py-3 font-medium">
-											{t("Department")}
-										</th>
+										<th className="px-3 py-3 font-medium">{t("Department")}</th>
 										<th className="px-3 py-3 font-medium">
 											{t("Search query")}
 										</th>
@@ -334,6 +400,8 @@ export default function AdminDashboardPage() {
 						</p>
 					)}
 				</section>
+
+				<NegativeFeedbackGrid departments={analytics.departments} />
 			</div>
 		</main>
 	);

@@ -6,7 +6,7 @@ from django.contrib.auth.hashers import make_password
 from tenants.models import Tenant
 from departments.models import Department
 from documents.models import Document, DocumentChunk
-from api.models import ChatAnswer
+from api.models import ChatAnswer, AnswerFeedback
 
 
 User = get_user_model()
@@ -106,3 +106,24 @@ class ChatAnswerFactory(factory.django.DjangoModelFactory):
     answer = "Employees receive 20 days of annual leave."
     citations = factory.LazyFunction(list)
     is_complete = True
+
+
+class AnswerFeedbackFactory(factory.django.DjangoModelFactory):
+    """
+    A verdict on an answer.
+
+    `user` defaults to the answer's author because the API only accepts
+    feedback from the person who asked; anything else would build rows
+    the real system can never produce.
+    """
+
+    class Meta:
+        model = AnswerFeedback
+
+    answer = factory.SubFactory(ChatAnswerFactory)
+    user = factory.LazyAttribute(lambda feedback: feedback.answer.user)
+    tenant = factory.LazyAttribute(
+        lambda feedback: feedback.answer.user.tenant
+    )
+    is_positive = True
+    user_comment = ""

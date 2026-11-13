@@ -188,6 +188,15 @@ class AnswerFeedback(models.Model):
                 fields=["tenant", "is_positive"],
                 name="feedback_tenant_sentiment_idx",
             ),
+            # The admin quality grid always filters one tenant and one
+            # verdict, then orders by newest first. Without created_at
+            # in the index Postgres has to sort the whole matching set
+            # before it can return page one; with it, the LIMIT stops
+            # the scan early.
+            models.Index(
+                fields=["tenant", "is_positive", "-created_at"],
+                name="feedback_tenant_neg_time_idx",
+            ),
         ]
 
     def __str__(self):
