@@ -76,12 +76,34 @@ Tenant 1 ──── * User
 | `file_size` | PositiveBigInteger | بایت |
 | `file_path` | FileField | مسیر ذخیره‌سازی |
 | `file_type` | CharField(20) | MIME واقعی |
-| `status` | CharField(20) | `Pending` / `Processing` / `Indexed` / `Failed` |
+| `status` | CharField(20) | `Pending` / `Processing` / `Indexed` / `Failed` / `Archived` |
 | `uploaded_by` | FK → User, CASCADE | آپلودکننده |
 | `department` | FK → Department, CASCADE | دپارتمان مالک |
 | `is_public` | Boolean, default False | قابل مشاهده برای همه دپارتمان‌های Tenant |
 | `is_system` | Boolean, default False | سند تولیدشده توسط پلتفرم (راهنمای دپارتمان) |
+| `version` | PositiveInteger, default 1 | شمارهٔ نسخه در زنجیره |
+| `parent_document` | FK → self, SET_NULL, nullable | نسخهٔ **قبلی** (نه ریشه) |
+| `archived_at` | DateTime, nullable | زمان بازنشسته‌شدن نسخه |
 | `created_at` | DateTime | — |
+
+### زنجیرهٔ نسخه‌ها
+
+هر آپلود جدید یک **رکورد تازه** می‌سازد، نه بازنویسی:
+
+```
+v1 (Archived) ← v2 (Archived) ← v3 (Indexed)
+```
+
+- `parent_document` به نسخهٔ بلافاصله قبل اشاره می‌کند، پس ترتیب تغییرات در خودِ داده ثبت است.
+- `version` همیشه `parent.version + 1` است و با قید `unique_document_version_per_parent` محافظت می‌شود: یک والد نمی‌تواند دو فرزند با شمارهٔ یکسان داشته باشد، پس زنجیره هرگز دو شاخه نمی‌شود.
+- `CheckConstraint` مقدار `version >= 1` را تضمین می‌کند.
+- نسخه‌های قدیمی **حذف نمی‌شوند**: متن و فایل‌شان می‌ماند تا ارجاع‌های صادرشده در گفتگوهای قبلی همچنان باز شوند.
+
+سه قاعدهٔ وابسته به `Archived`:
+
+1. موتور جست‌وجو (کلیدواژه‌ای، برداری و دروازهٔ شروع سرد) نسخه‌های آرشیوشده را نادیده می‌گیرد. Embeddingهای آن‌ها هنگام آرشیو حذف می‌شوند تا ایندکس HNSW نسخهٔ منسوخ را برنگرداند؛ Chunkها می‌مانند.
+2. `document_count` در readiness و آمار داشبورد ادمین نسخه‌های آرشیوشده را نمی‌شمارد.
+3. حذف یک سند، **کل زنجیره** را حذف می‌کند؛ وگرنه نسخه‌های آرشیوشده‌ای که در لیست دیده نمی‌شوند برای همیشه باقی می‌ماندند.
 
 ### `is_system`
 

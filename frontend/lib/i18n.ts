@@ -121,6 +121,12 @@ const FA: Record<string, string> = {
 	"Please enter a document title.": "عنوان سند را وارد کنید.",
 	"Document uploaded successfully.": "سند با موفقیت بارگذاری شد.",
 	"Document deleted successfully.": "سند با موفقیت حذف شد.",
+	"New version": "نسخهٔ جدید",
+	"Choose a replacement file": "انتخاب فایل نسخهٔ جدید",
+	"v{version}": "v{version}",
+	"Version {version} uploaded. The previous version was archived.":
+		"نسخهٔ {version} بارگذاری شد و نسخهٔ قبلی آرشیو شد.",
+	Archived: "آرشیو شده",
 	"Are you sure you want to delete this document?":
 		"از حذف این سند مطمئن هستید؟",
 	"Enter document title": "عنوان سند را وارد کنید",

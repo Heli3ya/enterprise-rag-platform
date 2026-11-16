@@ -191,7 +191,9 @@ def test_semantic_search_maps_ai_results():
             "api.services.DocumentChunk.objects.select_related"
         ) as select_related,
     ):
-        select_related.return_value.filter.return_value = [chunk]
+        select_related.return_value.filter.return_value.exclude.return_value = [
+            chunk
+        ]
 
         results = semantic_search(
             "annual leave",
@@ -220,6 +222,11 @@ def test_semantic_search_maps_ai_results():
     assert filter_kwargs["document__tenant_id"] == 1
     assert filter_kwargs["document__department_id"] == 7
     assert filter_kwargs["document__department__tenant_id"] == 1
+
+    # Superseded versions must never come back as citations.
+    select_related.return_value.filter.return_value.exclude.assert_called_once_with(
+        document__status="Archived",
+    )
 
     assert len(results) == 1
     assert results[0].chunk_id == 25
@@ -255,7 +262,7 @@ def test_semantic_search_discards_unauthorized_chunks():
             "api.services.DocumentChunk.objects.select_related"
         ) as select_related,
     ):
-        select_related.return_value.filter.return_value = []
+        select_related.return_value.filter.return_value.exclude.return_value = []
 
         results = semantic_search(
             "annual leave",

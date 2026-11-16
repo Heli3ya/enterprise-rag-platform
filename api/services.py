@@ -14,6 +14,7 @@ from django.contrib.postgres.search import (
 )
 
 from documents.models import DocumentChunk
+from documents.versioning import ARCHIVED_STATUS
 
 
 logger = logging.getLogger(__name__)
@@ -222,6 +223,12 @@ def department_has_searchable_content(user):
         document__tenant_id=user.tenant_id,
         document__department_id=department_id,
         document__department__tenant_id=user.tenant_id,
+    ).exclude(
+        # A department whose only document has been superseded has
+        # nothing to answer from, exactly like an empty one. The gate
+        # must agree with the retrieval filter, or it would wave the
+        # request through to an LLM that has no sources.
+        document__status=ARCHIVED_STATUS,
     ).exists()
 
 
@@ -275,6 +282,11 @@ def semantic_search(query, limit=5, user=None):
             document__department_id=department_id,
             document__department__tenant_id=tenant_id,
         )
+        # Defence in depth: archiving drops the vectors, so the AI
+        # service should not return these ids at all. Checking here
+        # means a stale vector, a restored backup or a race still
+        # cannot make an obsolete procedure citable.
+        .exclude(document__status=ARCHIVED_STATUS)
     )
 
     chunks_by_id = {
@@ -336,6 +348,7 @@ def keyword_search(query, limit=5, user=None):
             document__department_id=department_id,
             document__department__tenant_id=tenant_id,
         )
+        .exclude(document__status=ARCHIVED_STATUS)
         .annotate(
             search_vector=SearchVector(
                 "content",

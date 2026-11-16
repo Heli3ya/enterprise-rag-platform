@@ -5,7 +5,7 @@ from urllib.parse import quote
 
 import magic
 
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.http import FileResponse, Http404
 from django.utils.decorators import method_decorator
 from django_ratelimit.decorators import ratelimit
@@ -33,9 +33,20 @@ from .serializers import (
     DocumentSerializer,
     DocumentStatusSerializer,
     DocumentListSerializer,
+    DocumentVersionSerializer,
     ChunkDetailSerializer,
+    detect_file_type,
 )
 from .tasks import process_document
+from .versioning import (
+    ARCHIVED_STATUS,
+    VersionConflict,
+    archive_document,
+    delete_chain,
+    latest_version,
+    next_version_number,
+    version_chain,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -55,12 +66,26 @@ class DocumentUploadView(generics.ListCreateAPIView):
         if user.tenant_id is None:
             return Document.objects.none()
 
-        return (
+        queryset = (
             Document.objects
             .filter(tenant_id=user.tenant_id)
             .select_related("department")
             .order_by("-created_at")
         )
+
+        # The list is "what can I work with", not "what has ever
+        # existed": superseded versions would double every row after a
+        # few edits. History stays reachable through `include_archived`
+        # and through the versions endpoint.
+        include_archived = self.request.query_params.get(
+            "include_archived",
+            "",
+        ).lower() in {"1", "true", "yes"}
+
+        if not include_archived:
+            queryset = queryset.exclude(status=ARCHIVED_STATUS)
+
+        return queryset
 
     def get_serializer_class(self):
         if self.request.method == "GET":
@@ -202,11 +227,226 @@ class DocumentDeleteView(generics.DestroyAPIView):
         return document
 
     def perform_destroy(self, instance):
-        if instance.file_path:
-            instance.file_path.delete(save=False)
-
-        instance.delete()
+        # The whole chain, not just the row that was clicked: the
+        # archived versions are hidden from the list, so leaving them
+        # behind would leave files nobody can ever delete.
+        delete_chain(instance)
         create_audit_log(self.request.user, "DELETE")
+
+
+@extend_schema(
+    request=DocumentVersionSerializer,
+    responses=DocumentVersionSerializer,
+)
+class DocumentVersionView(generics.GenericAPIView):
+    """
+    Upload a replacement for an existing document, and list its chain.
+
+    `POST` creates a new `Document` row rather than overwriting the old
+    one: the previous text must stay readable, because citations that
+    were issued against it are still in people's chat history. The new
+    row carries `version = parent.version + 1`, points at its parent,
+    and the parent is retired to `Archived` in the same transaction.
+
+    `GET` returns the whole chain, oldest first, so the UI can show
+    "v3 of 5" without walking links itself.
+    """
+
+    permission_classes = [IsDepartmentMember]
+    parser_classes = [MultiPartParser, FormParser]
+    serializer_class = DocumentVersionSerializer
+
+    def get_queryset(self):
+        user = self.request.user
+
+        if user.tenant_id is None:
+            return Document.objects.none()
+
+        return (
+            Document.objects
+            .filter(
+                tenant_id=user.tenant_id,
+                department__tenant_id=user.tenant_id,
+            )
+            .select_related("department", "parent_document", "uploaded_by")
+        )
+
+    def get_object(self):
+        document = super().get_object()
+        user = self.request.user
+
+        # Same rule as uploading: your own department, or any
+        # department if you are an Admin of the tenant.
+        if (
+            user.role != "Admin"
+            and document.department_id != user.department_id
+        ):
+            raise PermissionDenied(
+                "You do not have permission to version this document."
+            )
+
+        return document
+
+    def get(self, request, pk):
+        document = self.get_object()
+        chain = version_chain(document)
+        newest = chain[-1]
+
+        return Response(
+            {
+                "document_id": document.id,
+                "version": document.version,
+                "latest_document_id": newest.id,
+                "versions": [
+                    {
+                        "id": item.id,
+                        "version": item.version,
+                        "title": item.title,
+                        "status": item.status,
+                        "file_size": item.file_size,
+                        "created_at": item.created_at,
+                        "archived_at": item.archived_at,
+                        "is_current": (
+                            item.id == newest.id
+                            and item.status != ARCHIVED_STATUS
+                        ),
+                    }
+                    for item in chain
+                ],
+            }
+        )
+
+    @method_decorator(
+        ratelimit(
+            key="user",
+            rate="10/h",
+            method="POST",
+            block=False,
+        )
+    )
+    def post(self, request, pk):
+        if getattr(request, "limited", False):
+            raise Throttled(
+                detail="Upload rate limit exceeded. Try again later."
+            )
+
+        document = self.get_object()
+        user = request.user
+
+        if document.is_system:
+            return Response(
+                {
+                    "error": (
+                        "Platform-generated documents cannot be versioned."
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        file = serializer.validated_data["file_path"]
+        requested_title = (
+            serializer.validated_data.get("title") or ""
+        ).strip()
+
+        try:
+            new_document = self._create_version(
+                document=document,
+                user=user,
+                file=file,
+                title=requested_title or document.title,
+            )
+        except VersionConflict as exc:
+            return Response(
+                {"error": str(exc)},
+                status=status.HTTP_409_CONFLICT,
+            )
+        except IntegrityError:
+            # Two uploads computed the same version number. The unique
+            # constraint rejected the loser; telling it to reload is
+            # better than silently creating a fork.
+            return Response(
+                {
+                    "error": (
+                        "A new version was created at the same time. "
+                        "Reload the document and try again."
+                    )
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        create_audit_log(user, "VERSION")
+
+        def enqueue_processing():
+            try:
+                process_document.delay(new_document.id)
+            except Exception:
+                logger.exception(
+                    "Failed to enqueue processing for document %s",
+                    new_document.id,
+                )
+                Document.objects.filter(id=new_document.id).update(
+                    status="Failed",
+                )
+
+        transaction.on_commit(enqueue_processing)
+
+        return Response(
+            {
+                "document_id": new_document.id,
+                "version": new_document.version,
+                "parent_document_id": document.id,
+                "archived_document_id": document.id,
+                "status": new_document.status,
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+    def _create_version(self, document, user, file, title):
+        """
+        Create the replacement and retire its parent, atomically.
+
+        The row lock is what makes "version = parent.version + 1" safe:
+        without it two uploads read v1, both compute v2, and the unique
+        constraint turns one of them into a confusing 500 instead of a
+        clean conflict. The constraint stays as the backstop.
+        """
+
+        with transaction.atomic():
+            locked = (
+                Document.objects
+                .select_for_update()
+                .get(pk=document.pk)
+            )
+
+            if locked.status == ARCHIVED_STATUS:
+                newest = latest_version(locked)
+
+                raise VersionConflict(
+                    "This version has already been superseded. "
+                    f"Upload the new version of document {newest.id} "
+                    f"(v{newest.version}) instead."
+                )
+
+            new_document = Document.objects.create(
+                tenant_id=locked.tenant_id,
+                title=title,
+                file_path=file,
+                file_type=detect_file_type(file),
+                file_size=file.size,
+                status="Pending",
+                uploaded_by=user,
+                department_id=locked.department_id,
+                is_public=locked.is_public,
+                version=next_version_number(locked),
+                parent_document=locked,
+            )
+
+            archive_document(locked)
+
+            return new_document
 
 
 def can_access_document(user, document):

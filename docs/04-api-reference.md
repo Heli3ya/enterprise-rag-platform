@@ -155,12 +155,20 @@
     "department": 1,
     "status": "Indexed",
     "created_at": "2026-01-02T08:30:00Z",
-    "is_system": false
+    "is_system": false,
+    "version": 2,
+    "parent_document": 11
   }
 ]
 ```
 
 `is_system: true` یعنی سند را پلتفرم ساخته است (سند راهنمای دپارتمان). چنین سندی در رابط کاربری نشان «System guide» می‌گیرد و دکمه حذف ندارد؛ در `document_count` مربوط به readiness و در آمار داشبورد ادمین هم شمرده نمی‌شود.
+
+**نسخه‌های آرشیوشده به‌صورت پیش‌فرض در لیست نمی‌آیند** تا هر سند فقط یک ردیف فعال داشته باشد. برای دیدن تاریخچه:
+
+```
+GET /api/documents/?include_archived=true
+```
 
 ### `POST /api/documents/`
 
@@ -215,15 +223,99 @@ curl -X POST http://127.0.0.1:8000/api/documents/ \
   "status": "Indexed",
   "department": 1,
   "uploaded_by": 3,
-  "created_at": "2026-01-02T08:30:00Z"
+  "created_at": "2026-01-02T08:30:00Z",
+  "version": 2,
+  "parent_document": 11,
+  "archived_at": null
 }
 ```
 
-مقادیر `status`: `Pending` | `Processing` | `Indexed` | `Failed`
+مقادیر `status`: `Pending` | `Processing` | `Indexed` | `Failed` | `Archived`
+
+`Archived` یعنی نسخهٔ جدیدتری این سند را جایگزین کرده است. متن و فایل باقی می‌ماند (ارجاع‌های قدیمی باید باز شوند) ولی Embeddingها حذف می‌شوند، پس موتور جست‌وجو دیگر آن را نمی‌بیند. `archived_at` زمان بازنشسته‌شدن را نگه می‌دارد.
+
+### `POST /api/documents/{id}/versions/`
+
+آپلود نسخهٔ جدید یک سند موجود. `multipart/form-data`:
+
+| فیلد | نوع | الزامی | توضیح |
+|---|---|---|---|
+| `file_path` | file | بله | همان قواعد آپلود اول: حداکثر ۵ مگابایت و MIME مجاز |
+| `title` | string | خیر | اگر ندهید، عنوان نسخهٔ قبلی به ارث می‌رسد |
+
+رفتار:
+
+1. یک رکورد **جدید** ساخته می‌شود؛ سند قبلی بازنویسی نمی‌شود.
+2. `version` برابر `parent.version + 1` است و `parent_document` به نسخهٔ قبلی اشاره می‌کند (زنجیره، نه فقط ریشه).
+3. در همان تراکنش، نسخهٔ قبلی `Archived` می‌شود و Embeddingهایش حذف می‌شوند.
+4. پردازش نسخهٔ جدید مثل آپلود اول در Celery صف می‌شود.
+
+پاسخ `201`:
+
+```json
+{
+  "document_id": 13,
+  "version": 2,
+  "parent_document_id": 12,
+  "archived_document_id": 12,
+  "status": "Pending"
+}
+```
+
+خطاها:
+
+| وضعیت | حالت |
+|---|---|
+| `400` | فایل نامعتبر/بزرگ، یا نسخه‌گرفتن از سند سیستمی |
+| `403` | کاربر عضو دپارتمان سند نیست و Admin هم نیست |
+| `404` | سند در Tenant دیگری است |
+| `409` | نسخهٔ والد قبلاً آرشیو شده (پیام، شناسهٔ نسخهٔ جاری را می‌دهد) یا آپلود هم‌زمان نسخهٔ تکراری ساخته |
+
+نمونه:
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/documents/12/versions/ \
+  -H "Authorization: Bearer $TOKEN" \
+  -F "file_path=@handbook-v2.pdf"
+```
+
+### `GET /api/documents/{id}/versions/`
+
+کل زنجیره، از قدیمی به جدید:
+
+```json
+{
+  "document_id": 12,
+  "version": 1,
+  "latest_document_id": 13,
+  "versions": [
+    {
+      "id": 12,
+      "version": 1,
+      "title": "Employee Handbook",
+      "status": "Archived",
+      "file_size": 524288,
+      "created_at": "2026-01-02T08:30:00Z",
+      "archived_at": "2026-02-01T10:00:00Z",
+      "is_current": false
+    },
+    {
+      "id": 13,
+      "version": 2,
+      "title": "Employee Handbook",
+      "status": "Indexed",
+      "file_size": 530112,
+      "created_at": "2026-02-01T10:00:00Z",
+      "archived_at": null,
+      "is_current": true
+    }
+  ]
+}
+```
 
 ### `DELETE /api/documents/{id}/delete/`
 
-آپلودکننده یا `Admin`. فایل فیزیکی و رکورد (به‌همراه Chunkها و Embeddingها با CASCADE) حذف می‌شود. پاسخ `204`.
+آپلودکننده یا `Admin`. **کل زنجیرهٔ نسخه‌ها** حذف می‌شود (فایل‌های فیزیکی + Chunkها + Embeddingها)، نه فقط رکوردی که روی آن کلیک شده؛ نسخه‌های آرشیوشده در لیست دیده نمی‌شوند و در غیر این صورت برای همیشه یتیم می‌ماندند. پاسخ `204`.
 
 ### `GET /api/documents/chunks/{chunk_id}/`
 

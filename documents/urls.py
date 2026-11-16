@@ -6,6 +6,7 @@ from .views import (
     DocumentDeleteView,
     DocumentFileView,
     DocumentPreviewView,
+    DocumentVersionView,
     ChunkDetailView,
 )
 
@@ -14,6 +15,11 @@ urlpatterns = [
     # Must be registered before the "<int:pk>/" routes so a chunk id
     # is never mistaken for a document id.
     path("chunks/<int:pk>/", ChunkDetailView.as_view(), name="chunk-detail"),
+    path(
+        "<int:pk>/versions/",
+        DocumentVersionView.as_view(),
+        name="document-versions",
+    ),
     path("<int:pk>/", DocumentStatusView.as_view(), name="document-status"),
     path("<int:pk>/file/", DocumentFileView.as_view(), name="document-file"),
     path(

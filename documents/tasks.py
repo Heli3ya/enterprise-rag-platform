@@ -9,6 +9,7 @@ from .chunking import chunk_text
 from .extractors.pdf import extract_pdf_text
 from .extractors.txt import extract_txt_text
 from .extractors.word import extract_word_text
+from .versioning import ARCHIVED_STATUS
 
 logger = logging.getLogger(__name__)
 EMBEDDING_BATCH_SIZE = 16
@@ -29,6 +30,19 @@ def process_document(document_id: int):
 
     try:
         document = Document.objects.get(id=document_id)
+
+        # The version may have been superseded between the upload and
+        # this task running. Resurrecting it here would put an obsolete
+        # procedure back into the index, so the task declines instead.
+        if document.status == ARCHIVED_STATUS:
+            logger.info(
+                "Skipping processing for archived document %s.",
+                document_id,
+            )
+            return {
+                "document_id": document_id,
+                "skipped": "archived",
+            }
 
         document.status = "Processing"
         document.save(update_fields=["status"])
@@ -139,6 +153,29 @@ def generate_embedding_batch(document_id: int, chunk_ids: list[int]):
             "count": 0,
         }
 
+    # Check before paying for the embedding call: an archived version
+    # must not consume inference, and must not get its vectors back.
+    current_status = (
+        Document.objects
+        .filter(id=document_id)
+        .values_list("status", flat=True)
+        .first()
+    )
+
+    if current_status == ARCHIVED_STATUS:
+        Embedding.objects.filter(chunk_id__in=chunk_ids).delete()
+
+        logger.info(
+            "Skipping embeddings for archived document %s.",
+            document_id,
+        )
+
+        return {
+            "document_id": document_id,
+            "count": 0,
+            "skipped": "archived",
+        }
+
     texts = [chunk.content for chunk in chunks]
 
     vectors, dimension = generate_embeddings(texts)
@@ -163,9 +200,33 @@ def generate_embedding_batch(document_id: int, chunk_ids: list[int]):
             ignore_conflicts=True,
         )
 
-        document = Document.objects.get(
-            id=document_id
+        # Lock the row before deciding anything: the archiving side
+        # takes the same lock, so one of the two orders always wins
+        # cleanly. Without it, an archive that commits between the
+        # insert and this read would leave vectors on an archived
+        # document — invisible today, but one restore away from being
+        # citable again.
+        document = (
+            Document.objects
+            .select_for_update()
+            .get(id=document_id)
         )
+
+        if document.status == ARCHIVED_STATUS:
+            Embedding.objects.filter(chunk_id__in=chunk_ids).delete()
+
+            logger.info(
+                "Document %s was archived during embedding; vectors dropped.",
+                document_id,
+            )
+
+            return {
+                "document_id": document_id,
+                "chunks_processed": len(chunks),
+                "dimension": dimension,
+                "status": document.status,
+                "skipped": "archived",
+            }
 
         total_chunks = DocumentChunk.objects.filter(
             document_id=document_id
