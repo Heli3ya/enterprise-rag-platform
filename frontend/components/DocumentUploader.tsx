@@ -30,6 +30,9 @@ type DocumentItem = {
 	created_at?: string;
 	/** True for the auto-generated onboarding guide. */
 	is_system?: boolean;
+	/** 1 for the first upload, 2+ for a replacement. */
+	version?: number;
+	parent_document?: number | null;
 };
 
 type ApiList<T> = T[] | { results?: T[] };
@@ -148,6 +151,7 @@ export default function DocumentUploader({
 }: DocumentUploaderProps) {
 	const t = useT();
 	const fileInputRef = useRef<HTMLInputElement>(null);
+	const versionInputRef = useRef<HTMLInputElement>(null);
 
 	const [departments, setDepartments] = useState<Department[]>([]);
 	const [documents, setDocuments] = useState<DocumentItem[]>([]);
@@ -159,6 +163,8 @@ export default function DocumentUploader({
 	const [isLoadingDocuments, setIsLoadingDocuments] = useState(true);
 	const [isUploading, setIsUploading] = useState(false);
 	const [deletingId, setDeletingId] = useState<number | null>(null);
+	const [versionTargetId, setVersionTargetId] = useState<number | null>(null);
+	const [versioningId, setVersioningId] = useState<number | null>(null);
 	const [uploadProgress, setUploadProgress] = useState(0);
 	const [error, setError] = useState("");
 	const [success, setSuccess] = useState("");
@@ -351,6 +357,65 @@ export default function DocumentUploader({
 			setError(`Failed to delete document: ${getErrorMessage(err)}`);
 		} finally {
 			setDeletingId(null);
+		}
+	};
+
+	const handleVersionClick = (documentId: number) => {
+		setVersionTargetId(documentId);
+		versionInputRef.current?.click();
+	};
+
+	/**
+	 * A replacement is a new record, not an overwrite: the backend keeps
+	 * the old file for citations that were already issued and retires it
+	 * to `Archived`, so the list keeps showing one current row.
+	 */
+	const handleVersionFile = async (event: ChangeEvent<HTMLInputElement>) => {
+		const file = event.target.files?.[0];
+		const targetId = versionTargetId;
+
+		// Reset first, so picking the same file twice still fires.
+		event.target.value = "";
+
+		if (!file || targetId === null) {
+			return;
+		}
+
+		setError("");
+		setSuccess("");
+
+		if (!isAllowedFile(file)) {
+			setError(t("Only PDF, Word (.doc/.docx), and TXT files are allowed."));
+			return;
+		}
+
+		const formData = new FormData();
+		formData.append("file_path", file);
+
+		setVersioningId(targetId);
+
+		try {
+			const response = await api.post<{ version: number }>(
+				`/documents/${targetId}/versions/`,
+				formData,
+			);
+
+			setSuccess(
+				t("Version {version} uploaded. The previous version was archived.", {
+					version: response.data?.version ?? "",
+				}),
+			);
+
+			await fetchDocuments();
+
+			// The new version needs indexing, so the dashboard's
+			// readiness state is worth re-asking.
+			onUploaded?.();
+		} catch (err: unknown) {
+			setError(`Failed to upload the new version: ${getErrorMessage(err)}`);
+		} finally {
+			setVersioningId(null);
+			setVersionTargetId(null);
 		}
 	};
 
@@ -564,6 +629,18 @@ export default function DocumentUploader({
 					</button>
 				</div>
 
+				{/* One hidden picker for the whole table: the row only
+				    records which document the next file belongs to. */}
+				<input
+					ref={versionInputRef}
+					type="file"
+					accept=".pdf,.doc,.docx,.txt"
+					onChange={handleVersionFile}
+					className="sr-only"
+					aria-label={t("Choose a replacement file")}
+					data-testid="version-file-input"
+				/>
+
 				{isLoadingDocuments ? (
 					<p className="py-6 text-center text-sm text-gray-500">
 						Loading documents...
@@ -615,6 +692,17 @@ export default function DocumentUploader({
 											<td className="max-w-xs break-words px-3 py-4 font-medium text-gray-800">
 												{document.title || getFileName(document)}
 
+												{(document.version ?? 1) > 1 && (
+													<span
+														data-testid="document-version-badge"
+														className="ms-2 inline-flex rounded-full bg-purple-50 px-2 py-0.5 text-xs font-medium text-purple-700"
+													>
+														{t("v{version}", {
+															version: String(document.version ?? 1),
+														})}
+													</span>
+												)}
+
 												{document.is_system && (
 													<span className="ms-2 inline-flex rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">
 														{t("System guide")}
@@ -640,7 +728,9 @@ export default function DocumentUploader({
 															? "bg-green-100 text-green-700"
 															: status.toLowerCase() === "failed"
 																? "bg-red-100 text-red-700"
-																: "bg-amber-100 text-amber-700"
+																: status.toLowerCase() === "archived"
+																	? "bg-gray-200 text-gray-600"
+																	: "bg-amber-100 text-amber-700"
 													}`}
 												>
 													{t(status)}
@@ -657,16 +747,30 @@ export default function DocumentUploader({
 														{t("Managed by the platform")}
 													</span>
 												) : (
-													<button
-														type="button"
-														onClick={() => void handleDelete(document.id)}
-														disabled={deletingId === document.id}
-														className="rounded-md px-2 py-1 text-sm font-medium text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
-													>
-														{deletingId === document.id
-															? t("Deleting...")
-															: t("Delete")}
-													</button>
+													<div className="flex flex-wrap items-center gap-1">
+														<button
+															type="button"
+															onClick={() => handleVersionClick(document.id)}
+															disabled={versioningId === document.id}
+															data-testid="document-new-version"
+															className="rounded-md px-2 py-1 text-sm font-medium text-blue-600 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50"
+														>
+															{versioningId === document.id
+																? t("Uploading...")
+																: t("New version")}
+														</button>
+
+														<button
+															type="button"
+															onClick={() => void handleDelete(document.id)}
+															disabled={deletingId === document.id}
+															className="rounded-md px-2 py-1 text-sm font-medium text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+														>
+															{deletingId === document.id
+																? t("Deleting...")
+																: t("Delete")}
+														</button>
+													</div>
 												)}
 											</td>
 										</tr>

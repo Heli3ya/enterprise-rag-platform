@@ -18,6 +18,40 @@ ALLOWED_FILE_TYPES = {
 }
 
 
+def detect_file_type(file):
+    """
+    The real MIME type, read from the bytes rather than the extension.
+
+    Reading moves the pointer, so it is rewound before returning: the
+    caller still has to save the file.
+    """
+
+    file_type = magic.from_buffer(file.read(2048), mime=True)
+    file.seek(0)
+
+    return file_type
+
+
+def validate_upload(file):
+    """
+    The rules a document upload must pass, shared by the first upload
+    and by every new version — a replacement may not sneak in a larger
+    or unsupported file than a fresh upload could.
+    """
+
+    if file.size > MAX_FILE_SIZE:
+        raise serializers.ValidationError(
+            "File size must be less than 5 MB."
+        )
+
+    if detect_file_type(file) not in ALLOWED_FILE_TYPES:
+        raise serializers.ValidationError(
+            "Unsupported file type."
+        )
+
+    return file
+
+
 class DocumentSerializer(serializers.ModelSerializer):
     file_path = serializers.FileField()
     class Meta:
@@ -39,27 +73,30 @@ class DocumentSerializer(serializers.ModelSerializer):
 
 
     def validate_file_path(self, file):
-
-        if file.size > MAX_FILE_SIZE:
-            raise serializers.ValidationError(
-                "File size must be less than 5 MB."
-            )
+        return validate_upload(file)
 
 
-        file_type = magic.from_buffer(
-            file.read(2048),
-            mime=True
-        )
+class DocumentVersionSerializer(serializers.Serializer):
+    """
+    A replacement file for an existing document.
 
-        file.seek(0)
+    `title` is optional: a new version normally inherits the title of
+    the one it replaces, and only an explicit value overrides it. The
+    department is not a field on purpose — moving a document to another
+    department is a different operation with different permissions, not
+    a side effect of uploading a file.
+    """
 
+    file_path = serializers.FileField()
+    title = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        max_length=255,
+    )
 
-        if file_type not in ALLOWED_FILE_TYPES:
-            raise serializers.ValidationError(
-                "Unsupported file type."
-            )
+    def validate_file_path(self, file):
+        return validate_upload(file)
 
-        return file
     
 class DocumentStatusSerializer(serializers.ModelSerializer):
 
@@ -73,6 +110,9 @@ class DocumentStatusSerializer(serializers.ModelSerializer):
             "department",
             "uploaded_by",
             "created_at",
+            "version",
+            "parent_document",
+            "archived_at",
         ]   
 
 class DocumentListSerializer(serializers.ModelSerializer):
@@ -87,6 +127,10 @@ class DocumentListSerializer(serializers.ModelSerializer):
             # The UI badges platform-generated documents (the onboarding
             # guide) and never offers a delete button for them.
             "is_system",
+            # A row that is v3 tells the reader the document has a past;
+            # `parent_document` is what a "show history" link needs.
+            "version",
+            "parent_document",
         ]
 
 

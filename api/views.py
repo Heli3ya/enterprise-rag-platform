@@ -950,7 +950,7 @@ def admin_analytics_view(request):
     tenant_documents = Document.objects.filter(
         tenant_id=tenant_id,
         department__tenant_id=tenant_id,
-    ).exclude(is_system=True)
+    ).exclude(is_system=True).exclude(status="Archived")
 
     document_stats = tenant_documents.aggregate(
         total_documents=Count("id"),

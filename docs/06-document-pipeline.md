@@ -97,6 +97,38 @@ transaction.on_commit(lambda: process_document.delay(document.id))
 - متن راهنما عمداً هیچ عددی داخل قلاب ندارد؛ `extract_citation_ids` هر `[12]` را استناد می‌گیرد و به Chunk بی‌ربط نگاشت می‌کند.
 - برای دپارتمان‌های قدیمی: `python manage.py seed_onboarding_docs --tenant-id 3 --dry-run` (بدون آرگومان: همه Tenantها).
 
+### نسخهٔ جدید یک سند (Versioning)
+
+`POST /api/documents/{id}/versions/` مسیر آپلود اول را تکرار می‌کند، با سه تفاوت:
+
+```python
+with transaction.atomic():
+    locked = Document.objects.select_for_update().get(pk=parent_id)
+
+    if locked.status == "Archived":
+        raise VersionConflict(...)          # → 409
+
+    new_document = Document.objects.create(
+        ...,
+        version=locked.version + 1,
+        parent_document=locked,
+    )
+    archive_document(locked)                # status + archived_at + حذف Embeddingها
+```
+
+1. **قفل ردیف والد.** بدون `select_for_update` دو آپلود هم‌زمان هر دو `v2` را محاسبه می‌کنند. قید `unique_document_version_per_parent` جلوی شاخه‌شدن را می‌گیرد و بازنده `409` می‌گیرد، ولی قفل کاری می‌کند که این حالت نادر باشد نه رایج.
+2. **آرشیو در همان تراکنش.** هیچ خواننده‌ای حالت «آرشیوشده ولی هنوز قابل جست‌وجو» را نمی‌بیند.
+3. **حذف Embeddingها، نگه‌داشتن Chunkها.** متن برای ارجاع‌های قدیمی می‌ماند؛ بردارها می‌روند تا ایندکس HNSW نسخهٔ منسوخ را برنگرداند.
+
+دو محافظ در وظایف پس‌زمینه، چون صف می‌تواند بعد از آرشیو اجرا شود:
+
+| وظیفه | محافظ |
+|---|---|
+| `process_document` | اگر سند `Archived` باشد، بدون استخراج و تکه‌بندی برمی‌گردد (`{"skipped": "archived"}`) |
+| `generate_embedding_batch` | قبل از فراخوانی مدل بررسی می‌کند؛ اگر بین تولید بردار و نوشتن، سند آرشیو شود، با `select_for_update` می‌بیند و بردارهای تازه را خودش پاک می‌کند |
+
+بدون این دو، سناریوی واقعی «آپلود v1 و بلافاصله v2» باعث می‌شد وظیفهٔ در جریان، نسخهٔ قدیمی را دوباره `Indexed` کند و به ایندکس برگرداند.
+
 ## ۳. استخراج متن
 
 `documents/tasks.py` بر اساس `file_type` تصمیم می‌گیرد:

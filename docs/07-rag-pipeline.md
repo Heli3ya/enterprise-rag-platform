@@ -37,6 +37,8 @@ def get_user_department_id(user):
 
 بررسی روی **Chunk** انجام می‌شود نه روی Document: سندی که هنوز `Pending` است Chunk ندارد و عملاً نمی‌تواند پاسخ دهد.
 
+هر سه فیلتر `DocumentChunk` در این فایل یک `.exclude(document__status=ARCHIVED_STATUS)` هم دارند. نسخه‌های قدیمی سند (`Archived`) Chunk خود را نگه می‌دارند تا تاریخچه از بین نرود، پس بدون این exclude دروازهٔ شروع سرد و هر دو مسیر بازیابی آن‌ها را «محتوای قابل جست‌وجو» می‌دیدند و سند منسوخ می‌توانست در پاسخ ظاهر شود.
+
 همین دروازه در دو endpoint فقط-جست‌وجو هم اعمال می‌شود: `POST /api/search/` و `POST /api/query/search/`. این دو مدل زبانی را صدا نمی‌زنند، اما `hybrid_search` پیش از جست‌وجو یک Embedding برای پرسش می‌سازد؛ در دپارتمان خالی آن رفت‌وبرگشت به AI service نتیجه‌اش تغییرناپذیر است. پاسخ همان `results: []` قبلی است و در `/api/query/search/` ردیف `SearchQuery` با صفر نتیجه همچنان ثبت می‌شود تا آمار جست‌وجو کامل بماند.
 
 خروجی هر دو حالت یکسان است:
@@ -80,15 +82,21 @@ JOIN documents_documentchunk c ON e.chunk_id = c.id
 JOIN documents_document d ON c.document_id = d.id
 WHERE d.tenant_id = %s
   AND d.department_id = ANY(%s)
+  AND d.status <> 'Archived'
 ORDER BY e.embedding_vector <=> %s::vector
 LIMIT %s
 ```
+
+شرط `status` پیش از `ORDER BY` گذاشته شده تا سطرهای منسوخ پیش از محاسبهٔ فاصله حذف شوند؛ اگر بعد از `LIMIT` فیلتر می‌شد، نسخه‌های `Archived` سهمیهٔ `limit` را می‌خوردند و ممکن بود نسخهٔ جاری بیرون بیفتد.
 
 سپس Django نتایج را **دوباره از دیتابیس** می‌خواند و فقط Chunkهایی را می‌پذیرد که:
 
 - `document.tenant_id == tenant_id`
 - `document.department_id == department_id`
 - `document.department.tenant_id == tenant_id`
+- `document.status != Archived`
+
+آخرین شرط «دفاع در عمق» است: سرویس AI هم `Archived` را حذف می‌کند، ولی فیلتر دوم در Django تضمین می‌کند اگر سرویس AI نسخهٔ قدیمی کوئری را اجرا کند یا کش شود، سند منسوخ باز هم به LLM نرسد.
 
 محتوای نمایش‌داده‌شده هم از دیتابیس می‌آید، نه از پاسخ سرویس AI. این کار جلوی دستکاری یا نشت محتوا از سرویس AI را می‌گیرد.
 
@@ -105,6 +113,7 @@ SearchRank(...)
 ```
 
 - فیلتر Tenant و دپارتمان مثل مسیر معنایی.
+- `.exclude(document__status=ARCHIVED_STATUS)` پیش از `annotate`، با همان استدلال مسیر معنایی.
 - محدود به همان `limit`.
 - ترتیب نزولی بر اساس `rank`.
 

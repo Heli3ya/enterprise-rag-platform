@@ -623,6 +623,10 @@ def vector_search(
                     ON c.document_id = d.id
                 WHERE d.tenant_id = %s
                   AND d.department_id = ANY(%s)
+                  -- Archived rows are superseded versions. They keep
+                  -- their chunks but lose their vectors, so this filter
+                  -- is a backstop rather than the only defence.
+                  AND d.status <> 'Archived'
                 ORDER BY e.embedding_vector <=> %s::vector
                 LIMIT %s
                 """,

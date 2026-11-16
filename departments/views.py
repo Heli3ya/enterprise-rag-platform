@@ -9,6 +9,7 @@ from drf_spectacular.utils import extend_schema
 
 from api.permissions import IsAdminUser
 from documents.models import Document, DocumentChunk
+from documents.versioning import ARCHIVED_STATUS
 
 from .models import Department
 from .serializers import (
@@ -97,7 +98,15 @@ class DepartmentReadinessView(APIView):
             department__tenant_id=user.tenant_id,
         )
 
-        document_count = documents.filter(is_system=False).count()
+        # Archived versions are history, not inventory: counting them
+        # would make the dashboard grow every time a procedure is
+        # revised and would keep a department looking "non-empty" long
+        # after its only document was replaced.
+        document_count = documents.filter(
+            is_system=False,
+        ).exclude(
+            status=ARCHIVED_STATUS,
+        ).count()
 
         onboarding_document_id = (
             documents
@@ -111,6 +120,8 @@ class DepartmentReadinessView(APIView):
             document__tenant_id=user.tenant_id,
             document__department_id=department_id,
             document__department__tenant_id=user.tenant_id,
+        ).exclude(
+            document__status=ARCHIVED_STATUS,
         ).exists()
 
         payload = {

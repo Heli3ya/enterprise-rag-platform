@@ -42,6 +42,11 @@ class Document(models.Model):
         ("Processing", "Processing"),
         ("Indexed", "Indexed"),
         ("Failed", "Failed"),
+        # A version that a newer upload has replaced. Its text stays in
+        # the database so old citations still resolve, but its vectors
+        # are dropped: the search engine must never cite a superseded
+        # procedure as if it were current.
+        ("Archived", "Archived"),
     )
 
     title = models.CharField(max_length=255)
@@ -76,10 +81,60 @@ class Document(models.Model):
     # the analytics totals ignore them.
     is_system = models.BooleanField(default=False)
 
+    # Version chain. A document uploaded for the first time is v1 with
+    # no parent; a replacement points at the version it replaces and
+    # carries that version's number plus one. The link is to the
+    # *previous* version, not to the root, so the chain records the
+    # order in which the document changed.
+    version = models.PositiveIntegerField(default=1)
+
+    parent_document = models.ForeignKey(
+        "self",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="next_versions",
+    )
+
+    # When a newer version retired this row. `status` answers "is it
+    # searchable?", this answers "since when?" — the question an audit
+    # asks and the status field cannot.
+    archived_at = models.DateTimeField(null=True, blank=True)
+
     created_at = models.DateTimeField(auto_now_add=True)
 
+    class Meta:
+        constraints = [
+            # Two concurrent uploads both computing "v2" for the same
+            # parent would fork the chain. The lock in the view makes
+            # that rare; this makes it impossible.
+            models.UniqueConstraint(
+                fields=["parent_document", "version"],
+                name="unique_document_version_per_parent",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(version__gte=1),
+                name="document_version_at_least_one",
+            ),
+        ]
+        indexes = [
+            # The document list filters by tenant and hides archived
+            # rows on every page load.
+            models.Index(
+                fields=["tenant", "status"],
+                name="document_tenant_status_idx",
+            ),
+        ]
+
     def __str__(self):
+        if self.version and self.version > 1:
+            return f"{self.title} (v{self.version})"
+
         return self.title
+
+    @property
+    def is_archived(self):
+        return self.status == "Archived"
 
 
 class DocumentChunk(models.Model):
