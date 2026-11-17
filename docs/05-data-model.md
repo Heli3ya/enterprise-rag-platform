@@ -84,6 +84,7 @@ Tenant 1 ──── * User
 | `version` | PositiveInteger, default 1 | شمارهٔ نسخه در زنجیره |
 | `parent_document` | FK → self, SET_NULL, nullable | نسخهٔ **قبلی** (نه ریشه) |
 | `archived_at` | DateTime, nullable | زمان بازنشسته‌شدن نسخه |
+| `purged_at` | DateTime, nullable | زمان پاک‌شدن این نسخه از ایندکس جست‌وجو توسط Worker |
 | `created_at` | DateTime | — |
 
 ### زنجیرهٔ نسخه‌ها
@@ -104,6 +105,8 @@ v1 (Archived) ← v2 (Archived) ← v3 (Indexed)
 1. موتور جست‌وجو (کلیدواژه‌ای، برداری و دروازهٔ شروع سرد) نسخه‌های آرشیوشده را نادیده می‌گیرد. Embeddingهای آن‌ها هنگام آرشیو حذف می‌شوند تا ایندکس HNSW نسخهٔ منسوخ را برنگرداند؛ Chunkها می‌مانند.
 2. `document_count` در readiness و آمار داشبورد ادمین نسخه‌های آرشیوشده را نمی‌شمارد.
 3. حذف یک سند، **کل زنجیره** را حذف می‌کند؛ وگرنه نسخه‌های آرشیوشده‌ای که در لیست دیده نمی‌شوند برای همیشه باقی می‌ماندند.
+
+قاعدهٔ چهارم بعداً اضافه شد و لایهٔ دائمی است: وقتی نسخهٔ جدید به `Indexed` رسید، Worker پاک‌سازی Chunkهای نسخه‌های قبلی را `is_active=False` می‌کند و هر Embedding باقی‌مانده را حذف می‌کند. تفاوتش با قاعدهٔ ۱ این است که آن یکی به `status` تکیه می‌کند و این یکی به خودِ Chunk: اگر روزی نسخه‌ای از آرشیو بیرون بیاید، متنش برمی‌گردد ولی Chunkهای کنارگذاشته‌شده نه. جزئیات در [06-document-pipeline.md](06-document-pipeline.md).
 
 ### `is_system`
 
@@ -132,12 +135,18 @@ f"documents/tenant_{instance.tenant_id}/{safe_filename}"
 | `document` | FK → Document, CASCADE | سند مالک |
 | `content` | TextField | متن Chunk |
 | `chunk_index` | PositiveInteger | ترتیب صفر-مبنا |
+| `is_active` | Boolean, default True | `False` یعنی نسخهٔ منسوخ: متن برای تاریخچه می‌ماند، ولی هیچ مسیر بازیابی آن را برنمی‌گرداند |
+| `purged_at` | DateTime, null | زمانی که Worker پاک‌سازی این Chunk را کنار گذاشت |
 
 قیدها و ایندکس‌ها:
 
 - `UNIQUE (document, chunk_index)` — `unique_document_chunk_index`
 - `GIN (to_tsvector('simple', content))` — `documentchunk_content_fts_idx`
+- `(document) WHERE is_active` — `documentchunk_active_idx` (جزئی؛ سطرهای کنارگذاشته‌شده وارد ایندکس نمی‌شوند و با انباشته‌شدن نسخه‌ها ایندکس کوچک می‌ماند)
 - ترتیب پیش‌فرض: `chunk_index`
+
+**چرا حذف نمی‌شوند:** `build_citations` منبع پاسخ‌های قبلی را با `chunk_id` پیدا می‌کند. حذف سطر یعنی Citationهای پاسخ‌هایی که قبلاً به کاربر تحویل داده شده‌اند خالی شوند. پس متن می‌ماند و فقط از ایندکس بیرون می‌رود.
+
 
 ## ۷. Embedding
 

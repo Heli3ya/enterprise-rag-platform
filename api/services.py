@@ -25,6 +25,44 @@ logger = logging.getLogger(__name__)
 MISSING_RERANK_SCORE = -1e9
 
 
+# Absolute relevance floors.
+#
+# The fused score below is normalized per query, so the best result of
+# any query is always 1.0 — it says "best of this query", never
+# "relevant". A threshold on it therefore cannot tell "nothing matches"
+# from "the best of a bad lot", and without a second, absolute signal the
+# least irrelevant chunk is handed to the model, which then answers from
+# it. These floors are compared against a raw score, which keeps its
+# meaning across queries.
+#
+# Calibration on the models this project ships (multilingual-e5-small +
+# cross-encoder), measured through this pipeline:
+#
+#   relevant, exact          +6.59     relevant, paraphrase (fa)  +1.10
+#   relevant, cross-lingual  +5.56     relevant, paraphrase (fa)  -0.35
+#   irrelevant, off-topic    -2.13     irrelevant, off-topic      -2.18
+#   irrelevant, off-topic    -3.56     irrelevant, off-topic      -5.46
+#
+# The gap to protect is -0.35 (a real paraphrase) to -2.13 (the best
+# irrelevant match). -1.0 sits inside it with a logit of margin on each
+# side. A stricter 0.0 drops the cross-lingual paraphrase, and this is a
+# Persian-first product: losing a real answer is worse than the risk the
+# floor exists to remove.
+RAG_MIN_RERANK_SCORE = float(
+    os.getenv("RAG_MIN_RERANK_SCORE", "-1.0")
+)
+
+# The reranker is optional and can be switched off on a small host. When
+# it is, no absolute signal is left: raw cosine similarities of
+# multilingual-e5-small are compressed (0.71-0.92 on our own corpus), so
+# a floor that drops an irrelevant passage also drops a relevant
+# paraphrase. The default keeps the pre-existing behaviour; raise it only
+# after measuring on your own documents.
+RAG_MIN_SEMANTIC_SIMILARITY = float(
+    os.getenv("RAG_MIN_SEMANTIC_SIMILARITY", "0.0")
+)
+
+
 # --- Cold start -------------------------------------------------------
 #
 # A department can be brand new, or simply have nothing about a given
@@ -223,6 +261,7 @@ def department_has_searchable_content(user):
         document__tenant_id=user.tenant_id,
         document__department_id=department_id,
         document__department__tenant_id=user.tenant_id,
+        is_active=True,
     ).exclude(
         # A department whose only document has been superseded has
         # nothing to answer from, exactly like an empty one. The gate
@@ -281,6 +320,7 @@ def semantic_search(query, limit=5, user=None):
             document__tenant_id=tenant_id,
             document__department_id=department_id,
             document__department__tenant_id=tenant_id,
+            is_active=True,
         )
         # Defence in depth: archiving drops the vectors, so the AI
         # service should not return these ids at all. Checking here
@@ -347,6 +387,7 @@ def keyword_search(query, limit=5, user=None):
             document__tenant_id=tenant_id,
             document__department_id=department_id,
             document__department__tenant_id=tenant_id,
+            is_active=True,
         )
         .exclude(document__status=ARCHIVED_STATUS)
         .annotate(
@@ -460,17 +501,21 @@ def hybrid_search(query, limit=5, user=None):
         )
     )
 
-    semantic_scores = {
+    semantic_similarities = {
         result.chunk_id: 1.0 - float(result.distance)
         for result in semantic_results
     }
+
+    # Kept untouched for the relevance floor at the end: normalizing is
+    # what makes the ranking work, and also what destroys the absolute
+    # meaning of the number.
+    semantic_scores = normalize_scores(semantic_similarities)
 
     keyword_scores = {
         result.id: float(result.rank)
         for result in keyword_results
     }
 
-    semantic_scores = normalize_scores(semantic_scores)
     keyword_scores = normalize_scores(keyword_scores)
 
     all_chunk_ids = set(semantic_scores) | set(keyword_scores)
@@ -516,6 +561,13 @@ def hybrid_search(query, limit=5, user=None):
                 "score": score,
                 "content": content,
                 "result": result,
+                # The raw similarity survives normalization only to be
+                # used as a fallback relevance signal when the reranker
+                # is unavailable.
+                "semantic_similarity": semantic_similarities.get(
+                    chunk_id,
+                    0.0,
+                ),
             }
         )
 
@@ -525,6 +577,7 @@ def hybrid_search(query, limit=5, user=None):
     )
 
     rerank_candidates = fused_results[:5]
+    reranked_by_model = True
 
     try:
         reranked_results = rerank_results(
@@ -540,6 +593,8 @@ def hybrid_search(query, limit=5, user=None):
             exc,
         )
 
+        reranked_by_model = False
+
         reranked_results = [
             {
                 **item,
@@ -548,7 +603,41 @@ def hybrid_search(query, limit=5, user=None):
             for item in rerank_candidates
         ]
 
-    return reranked_results[:limit]
+    # The floor. Everything above ranks; this decides whether anything
+    # is worth answering from at all. The two scores are not
+    # interchangeable — a cross-encoder score is a relevance logit, the
+    # fallback is a cosine similarity — so each path uses its own knob.
+    if reranked_by_model:
+        score_key = "rerank_score"
+        floor = RAG_MIN_RERANK_SCORE
+    else:
+        score_key = "semantic_similarity"
+        floor = RAG_MIN_SEMANTIC_SIMILARITY
+
+    kept = [
+        item
+        for item in reranked_results
+        if item.get(score_key, 0.0) >= floor
+    ]
+
+    if reranked_results and not kept:
+        # Nothing cleared the floor: the caller turns an empty list into
+        # "no documents found", which is the honest answer. Answering
+        # from the least irrelevant chunk is how a RAG system invents
+        # sources.
+        logger.info(
+            "No result cleared the relevance floor: best %s %.3f, "
+            "floor %.3f, dropped %s.",
+            score_key,
+            max(
+                item.get(score_key, 0.0)
+                for item in reranked_results
+            ),
+            floor,
+            len(reranked_results),
+        )
+
+    return kept[:limit]
 
 
 # How many characters of each chunk reach the prompt.

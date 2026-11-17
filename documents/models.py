@@ -101,6 +101,12 @@ class Document(models.Model):
     # asks and the status field cannot.
     archived_at = models.DateTimeField(null=True, blank=True)
 
+    # When the cleanup worker removed this version's searchable
+    # footprint: chunks tombstoned, vectors deleted. NULL means "not
+    # purged yet". It doubles as the worker's idempotency marker, so a
+    # retried task can tell "already done" from "nothing to do".
+    purged_at = models.DateTimeField(null=True, blank=True)
+
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -147,6 +153,14 @@ class DocumentChunk(models.Model):
     content = models.TextField()
     chunk_index = models.PositiveIntegerField()
 
+    # A superseded version keeps its text so citations issued against
+    # it still resolve, but its chunks are tombstoned so no retrieval
+    # path can return them. Deleting the row instead would blank the
+    # sources of answers that were already delivered to a user.
+    is_active = models.BooleanField(default=True)
+
+    purged_at = models.DateTimeField(null=True, blank=True)
+
     class Meta:
         ordering = ["chunk_index"]
         constraints = [
@@ -159,7 +173,15 @@ class DocumentChunk(models.Model):
             GinIndex(
                 SearchVector("content", config="simple"),
                 name="documentchunk_content_fts_idx",
-            )
+            ),
+            # Partial: every retrieval query asks for the live chunks of
+            # a document, and tombstoned rows are never read. Keeping
+            # them out of the index keeps it small as revisions pile up.
+            models.Index(
+                fields=["document"],
+                name="documentchunk_active_idx",
+                condition=models.Q(is_active=True),
+            ),
         ]
 
     def __str__(self):

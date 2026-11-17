@@ -306,6 +306,10 @@ class DocumentVersionView(generics.GenericAPIView):
                         "file_size": item.file_size,
                         "created_at": item.created_at,
                         "archived_at": item.archived_at,
+                        # When the cleanup worker took this version out
+                        # of the index. NULL on an archived row means
+                        # the purge is still queued.
+                        "purged_at": item.purged_at,
                         "is_current": (
                             item.id == newest.id
                             and item.status != ARCHIVED_STATUS
