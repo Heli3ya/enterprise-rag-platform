@@ -627,6 +627,12 @@ def vector_search(
                   -- their chunks but lose their vectors, so this filter
                   -- is a backstop rather than the only defence.
                   AND d.status <> 'Archived'
+                  -- Tombstoned chunks belong to a version the cleanup
+                  -- worker has already purged. Filtering here as well
+                  -- keeps them from consuming the LIMIT below, which
+                  -- would otherwise let a purged version push the live
+                  -- one out of the result set.
+                  AND c.is_active
                 ORDER BY e.embedding_vector <=> %s::vector
                 LIMIT %s
                 """,
