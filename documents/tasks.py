@@ -6,6 +6,7 @@ from api.services import generate_embeddings
 
 from .models import Document, DocumentChunk, Embedding
 from .chunking import chunk_text
+from .cleanup import purge_superseded_versions
 from .extractors.pdf import extract_pdf_text
 from .extractors.txt import extract_txt_text
 from .extractors.word import extract_word_text
@@ -144,6 +145,10 @@ def generate_embedding_batch(document_id: int, chunk_ids: list[int]):
         DocumentChunk.objects.filter(
             id__in=chunk_ids,
             document_id=document_id,
+            # A tombstoned chunk belongs to a version that has already
+            # been purged. Embedding it would pay for inference whose
+            # only possible outcome is a vector we then delete.
+            is_active=True,
         ).order_by("chunk_index")
     )
 
@@ -229,11 +234,12 @@ def generate_embedding_batch(document_id: int, chunk_ids: list[int]):
             }
 
         total_chunks = DocumentChunk.objects.filter(
-            document_id=document_id
+            document_id=document_id,
+            is_active=True,
         ).count()
 
         total_embeddings = Embedding.objects.filter(
-            chunk__document_id=document_id
+            chunk__document_id=document_id,
         ).count()
 
         if (
@@ -243,9 +249,90 @@ def generate_embedding_batch(document_id: int, chunk_ids: list[int]):
             document.status = "Indexed"
             document.save(update_fields=["status"])
 
+            # Only now is the replacement usable, so only now is it
+            # safe to erase what it replaced. `on_commit` keeps the
+            # worker from picking up a row that is still "Processing"
+            # and skipping the cleanup as a no-op.
+            #
+            # A first upload has nothing to retire, and skipping the
+            # enqueue here keeps the queue free of one no-op task per
+            # document the platform has ever seen.
+            if document.parent_document_id is not None:
+                transaction.on_commit(
+                    lambda: cleanup_superseded_document.delay(
+                        document_id
+                    )
+                )
+
     return {
         "document_id": document_id,
         "chunks_processed": len(chunks),
         "dimension": dimension,
         "status": document.status,
     }
+
+
+@shared_task(
+    name="documents.cleanup_superseded_document",
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    retry_backoff_max=120,
+    retry_kwargs={"max_retries": 5},
+)
+def cleanup_superseded_document(document_id: int):
+    """
+    Take every version that `document_id` replaced out of the index.
+
+    Enqueued when a replacement finishes indexing, and only then: the
+    old version must stay searchable for as long as the new one is not.
+    A document that never reaches `Indexed` therefore never triggers a
+    purge, which is the correct outcome — its predecessor is still the
+    best answer available.
+
+    The task is safe to run twice, out of order, or for a document that
+    was deleted meanwhile. Celery can deliver the same message more than
+    once; the purge is written so that the second delivery is a no-op.
+    """
+
+    document = (
+        Document.objects
+        .filter(pk=document_id)
+        .first()
+    )
+
+    if document is None:
+        logger.info(
+            "Cleanup skipped: document %s no longer exists.",
+            document_id,
+        )
+
+        return {"document_id": document_id, "skipped": "missing"}
+
+    if document.status != "Indexed":
+        # Either the replacement failed, or it was itself superseded
+        # before this task ran. In both cases the newest version's own
+        # cleanup will walk the chain and cover these rows.
+        logger.info(
+            "Cleanup skipped: document %s is %s, not Indexed.",
+            document_id,
+            document.status,
+        )
+
+        return {
+            "document_id": document_id,
+            "skipped": "not_indexed",
+            "status": document.status,
+        }
+
+    summary = purge_superseded_versions(document)
+
+    logger.info(
+        "Cleanup for document %s: %s version(s), %s chunk(s), "
+        "%s vector(s).",
+        document_id,
+        summary["versions_purged"],
+        summary["chunks_tombstoned"],
+        summary["embeddings_deleted"],
+    )
+
+    return summary
