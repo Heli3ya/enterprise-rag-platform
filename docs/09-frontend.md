@@ -142,7 +142,7 @@ LoginPage
 - آپلود: `POST /documents/` با `FormData` شامل `title`، `department`، `file_path`
 - نسخهٔ جدید: `POST /documents/{id}/versions/` با `FormData` شامل `file_path`
 - حذف: `DELETE /documents/{id}/delete/`
-- پذیرش فایل در سمت کلاینت: `.pdf`، `.doc`، `.docx`، `.txt`
+- پذیرش فایل در سمت کلاینت: `.pdf`، `.doc`، `.docx`، `.txt`، `.xlsx`، `.csv` — دو جا تعریف می‌شود: `accept` روی input و `ALLOWED_EXTENSIONS`/`ALLOWED_MIME_TYPES` در `DocumentUploader.tsx`. این دو لیست باید هم‌خوان بمانند؛ یک بار `.xlsx` به `accept` و به سرور اضافه شد ولی از فیلتر جاوااسکریپتی جا ماند و فایل سالم پیش از ارسال رد می‌شد (`e2e/spreadsheet-upload.spec.ts`). فیلتر کلاینت فقط برای شکست سریع است؛ اعتبارسنجی واقعی در سرور و بر اساس بایت‌های فایل انجام می‌شود، پس لیست MIME عمداً سخاوتمندانه است (`text/csv`، `application/vnd.ms-excel`، `application/octet-stream`).
 - نمایش اندازه فایل و وضعیت سند
 - پس از آپلود، لیست دوباره خوانده می‌شود
 
