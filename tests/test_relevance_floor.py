@@ -292,3 +292,92 @@ def test_a_relevant_answer_still_reaches_the_model():
     post.assert_called_once()
     assert result["answer"] == "Thirty days. [1]"
     assert result.get("no_documents") is not True
+
+
+@pytest.mark.django_db
+def test_a_literal_hit_survives_a_below_floor_score():
+    """
+    The reranker is trained on English prose. A Persian table row —
+    `| بلبرینگ | 45 | یورو |` — scores −1.25 for the query «بلبرینگ»,
+    which is the word in the row. Dropping it makes the platform claim
+    its own knowledge base does not contain what the user can see in it.
+    """
+
+    user = UserFactory()
+
+    with (
+        patch(
+            "api.services.semantic_search",
+            return_value=[
+                semantic_hit(1, "| کالا | قیمت |\n| بلبرینگ | 45 |")
+            ],
+        ),
+        patch("api.services.keyword_search", return_value=[]),
+        patch(
+            "api.services.rerank_results",
+            side_effect=rerank_to(-1.248),
+        ),
+    ):
+        results = hybrid_search("بلبرینگ", user=user)
+
+    assert len(results) == 1
+    assert results[0]["chunk_id"] == 1
+
+
+@pytest.mark.django_db
+def test_a_literal_hit_is_case_insensitive():
+    user = UserFactory()
+
+    with (
+        patch(
+            "api.services.semantic_search",
+            return_value=[semantic_hit(1, "Bearing kit — code br-777")],
+        ),
+        patch("api.services.keyword_search", return_value=[]),
+        patch(
+            "api.services.rerank_results",
+            side_effect=rerank_to(-4.0),
+        ),
+    ):
+        results = hybrid_search("BR-777", user=user)
+
+    # The user's uppercase code and the row's lowercase one are the same
+    # string to a person, so they must be the same string here.
+    assert len(results) == 1
+
+
+@pytest.mark.django_db
+def test_a_non_literal_row_below_the_floor_is_still_dropped():
+    user = UserFactory()
+
+    results = search_with(
+        user,
+        [semantic_hit(1, "SELECT firstname, lastname FROM HR.Employees")],
+        rerank_score=-1.248,
+    )
+
+    # The exemption is for text the user literally typed, not for
+    # everything the reranker happened to dislike.
+    assert results == []
+
+
+@pytest.mark.django_db
+def test_a_very_short_query_does_not_exempt_everything():
+    user = UserFactory()
+
+    with (
+        patch(
+            "api.services.semantic_search",
+            return_value=[semantic_hit(1, "a row of a table")],
+        ),
+        patch("api.services.keyword_search", return_value=[]),
+        patch(
+            "api.services.rerank_results",
+            side_effect=rerank_to(-9.0),
+        ),
+    ):
+        results = hybrid_search("a", user=user)
+
+    # A one-character query appears in almost any text; exempting it
+    # would disable the floor entirely.
+    assert results == []
