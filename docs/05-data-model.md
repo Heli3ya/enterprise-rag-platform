@@ -75,7 +75,7 @@ Tenant 1 ──── * User
 | `title` | CharField(255) | عنوان |
 | `file_size` | PositiveBigInteger | بایت |
 | `file_path` | FileField | مسیر ذخیره‌سازی |
-| `file_type` | CharField(20) | MIME واقعی |
+| `file_type` | CharField(100) | MIME واقعی؛ ۱۰۰ برای جا شدن MIME کامل OOXML |
 | `status` | CharField(20) | `Pending` / `Processing` / `Indexed` / `Failed` / `Archived` |
 | `uploaded_by` | FK → User, CASCADE | آپلودکننده |
 | `department` | FK → Department, CASCADE | دپارتمان مالک |

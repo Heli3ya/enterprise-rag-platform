@@ -186,6 +186,10 @@ GET /api/documents/?include_archived=true
 - `text/plain`
 - `application/msword`
 - `application/vnd.openxmlformats-officedocument.wordprocessingml.document`
+- `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` (`.xlsx`)
+- `text/csv` (`.csv`)
+
+برای `.xlsx` و `.csv`، پسوند هم شرط است: `libmagic` برای اکسل `application/zip` و برای CSV `text/plain` می‌گوید، پس نوع ذخیره‌شده از پسوند می‌آید و تنها وقتی پذیرفته می‌شود که بایت‌ها تأییدش کنند (پوشه `xl/` داخل zip، و UTF-8 معتبر برای CSV). فایل ناسازگار → `400` با پیام «Unsupported file type, or the file content does not match its extension.»
 
 قواعد مجوز:
 

@@ -12,6 +12,7 @@ import logging
 from .extractors.pdf import extract_pdf_text
 from .extractors.txt import extract_txt_text
 from .extractors.word import extract_word_text
+from .filetypes import TABULAR_FILE_TYPES
 
 
 logger = logging.getLogger(__name__)
@@ -59,6 +60,18 @@ def extract_document_text(document, max_characters=MAX_PREVIEW_CHARACTERS):
 
             elif document.file_type in WORD_FILE_TYPES:
                 text = extract_word_text(handle)
+
+            elif document.file_type in TABULAR_FILE_TYPES:
+                # The preview is the rows as they were indexed, one
+                # passage after another. It is not the original grid —
+                # a browser cannot render that from text — but it is
+                # the exact text a citation was drawn from, which is
+                # what the drawer is for.
+                from .extractors.tabular import extract_tabular_rows
+
+                text = "\n\n".join(
+                    extract_tabular_rows(handle, document.file_type)
+                )
 
             else:
                 raise PreviewUnavailable(

@@ -10,6 +10,7 @@ from .cleanup import purge_superseded_versions
 from .extractors.pdf import extract_pdf_text
 from .extractors.txt import extract_txt_text
 from .extractors.word import extract_word_text
+from .filetypes import TABULAR_FILE_TYPES
 from .versioning import ARCHIVED_STATUS
 
 logger = logging.getLogger(__name__)
@@ -48,6 +49,8 @@ def process_document(document_id: int):
         document.status = "Processing"
         document.save(update_fields=["status"])
 
+        chunks = None
+
         with document.file_path.open("rb") as file:
             if document.file_type == "application/pdf":
                 extracted_text = extract_pdf_text(file)
@@ -61,16 +64,33 @@ def process_document(document_id: int):
             ):
                 extracted_text = extract_word_text(file)
 
+            elif document.file_type in TABULAR_FILE_TYPES:
+                # Imported here rather than at module scope: `views.py`
+                # imports this module to enqueue the task, so a
+                # top-level import would pull pandas into every web
+                # process — a hundred megabytes and a noticeable slice
+                # of boot time for a branch only the worker reaches.
+                from .extractors.tabular import extract_tabular_rows
+
+                # A table is chunked by row, not by token count: the
+                # generic chunker cuts mid-row and drops the header, and
+                # a passage of bare cells answers nothing.
+                chunks = extract_tabular_rows(
+                    file,
+                    document.file_type,
+                )
+
             else:
                 raise ValueError(
                     f"Unsupported file type: {document.file_type}"
                 )
 
-        chunks = chunk_text(
-            extracted_text,
-            chunk_size=400,
-            overlap_percent=10,
-        )
+        if chunks is None:
+            chunks = chunk_text(
+                extracted_text,
+                chunk_size=400,
+                overlap_percent=10,
+            )
 
         if not chunks:
             raise ValueError("No text chunks were generated.")

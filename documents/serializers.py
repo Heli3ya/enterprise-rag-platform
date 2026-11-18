@@ -1,35 +1,16 @@
-import magic
-
 from rest_framework import serializers
 
+from .filetypes import (
+    ALLOWED_FILE_TYPES,
+    INVALID_FILE_TYPE,
+    effective_file_type,
+)
 from .highlighting import find_highlights
 from .links import document_file_url, document_preview_url
 from .models import Document, DocumentChunk
 
 
 MAX_FILE_SIZE = 5 * 1024 * 1024
-
-
-ALLOWED_FILE_TYPES = {
-    "application/pdf",
-    "text/plain",
-    "application/msword",
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-}
-
-
-def detect_file_type(file):
-    """
-    The real MIME type, read from the bytes rather than the extension.
-
-    Reading moves the pointer, so it is rewound before returning: the
-    caller still has to save the file.
-    """
-
-    file_type = magic.from_buffer(file.read(2048), mime=True)
-    file.seek(0)
-
-    return file_type
 
 
 def validate_upload(file):
@@ -44,7 +25,18 @@ def validate_upload(file):
             "File size must be less than 5 MB."
         )
 
-    if detect_file_type(file) not in ALLOWED_FILE_TYPES:
+    # `effective_file_type` rather than the raw MIME: a spreadsheet and
+    # a CSV are identified by their extension *and* their bytes, because
+    # libmagic reports `application/zip` and `text/plain` for them.
+    file_type = effective_file_type(file)
+
+    if file_type == INVALID_FILE_TYPE:
+        raise serializers.ValidationError(
+            "Unsupported file type, or the file content does not match "
+            "its extension."
+        )
+
+    if file_type not in ALLOWED_FILE_TYPES:
         raise serializers.ValidationError(
             "Unsupported file type."
         )
