@@ -66,25 +66,13 @@ jobs:
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt
-          python -m pip install \
-            Django==6.0.7 \
-            django-cors-headers==4.9.0 \
-            django-prometheus==2.5.0 \
-            djangorestframework==3.17.1 \
-            djangorestframework_simplejwt==5.5.1 \
-            drf-spectacular==0.30.0 \
-            pgvector==0.5.0 \
-            psycopg2-binary==2.9.12 \
-            python-dotenv==1.2.2 \
-            sentry-sdk==2.71.0 \
-            redis==8.1.0 \
-            celery==5.6.3 \
-            pypdf==6.15.0 \
-            python-docx==1.2.0 \
-            tiktoken==0.11.0 \
-            python-magic \
-            flake8==7.3.0
+          # The same two files the Docker image installs. This list used to
+          # be copied by hand, so CI and the image could disagree — and did:
+          # pandas, openpyxl and packaging were added to the image for the
+          # spreadsheet pipeline while CI kept installing the old set, so a
+          # green image and a red pipeline described the same code.
+          python -m pip install -r requirements-django.txt -r requirements.txt
+          python -m pip install flake8==7.3.0
 
       - name: Prepare PostgreSQL test template
         env:
