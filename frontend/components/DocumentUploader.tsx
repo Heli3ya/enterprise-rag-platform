@@ -37,13 +37,27 @@ type DocumentItem = {
 
 type ApiList<T> = T[] | { results?: T[] };
 
-const ALLOWED_EXTENSIONS = [".pdf", ".doc", ".docx", ".txt"];
+const ALLOWED_EXTENSIONS = [".pdf", ".doc", ".docx", ".txt", ".xlsx", ".csv"];
 
+/**
+ * A quick client-side gate, not the authority.
+ *
+ * The server re-detects every file from its bytes (`documents/filetypes.py`),
+ * because a browser's `file.type` is a guess made from the extension. This
+ * list only exists to fail fast and to keep an obvious mistake from costing
+ * an upload round-trip — so it is deliberately permissive: a spreadsheet can
+ * arrive as `text/csv`, as `application/vnd.ms-excel` (Excel on Windows), or
+ * as `application/octet-stream` when the browser has no mapping for it.
+ */
 const ALLOWED_MIME_TYPES = [
 	"application/pdf",
 	"application/msword",
 	"application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+	"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+	"application/vnd.ms-excel",
+	"application/octet-stream",
 	"text/plain",
+	"text/csv",
 ];
 
 function getErrorMessage(error: unknown): string {
@@ -225,7 +239,11 @@ export default function DocumentUploader({
 
 			if (!isAllowedFile(file)) {
 				setSelectedFile(null);
-				setError(t("Only PDF, Word (.doc/.docx), and TXT files are allowed."));
+				setError(
+					t(
+						"Only PDF, Word (.doc/.docx), TXT, Excel (.xlsx), and CSV files are allowed.",
+					),
+				);
 
 				if (fileInputRef.current) {
 					fileInputRef.current.value = "";
@@ -385,7 +403,11 @@ export default function DocumentUploader({
 		setSuccess("");
 
 		if (!isAllowedFile(file)) {
-			setError(t("Only PDF, Word (.doc/.docx), and TXT files are allowed."));
+			setError(
+				t(
+					"Only PDF, Word (.doc/.docx), TXT, Excel (.xlsx), and CSV files are allowed.",
+				),
+			);
 			return;
 		}
 
@@ -508,7 +530,7 @@ export default function DocumentUploader({
 					<input
 						ref={fileInputRef}
 						type="file"
-						accept=".pdf,.doc,.docx,.txt"
+						accept=".pdf,.doc,.docx,.txt,.xlsx,.csv"
 						onChange={handleInputChange}
 						disabled={isUploading}
 						className="sr-only"
@@ -539,7 +561,7 @@ export default function DocumentUploader({
 							or click to select a file
 						</span>
 						<span className="mt-2 block text-xs text-gray-400">
-							Supported formats: PDF, DOC, DOCX, TXT
+							Supported formats: PDF, DOC, DOCX, TXT, XLSX, CSV
 						</span>
 					</button>
 				</div>
@@ -634,7 +656,7 @@ export default function DocumentUploader({
 				<input
 					ref={versionInputRef}
 					type="file"
-					accept=".pdf,.doc,.docx,.txt"
+					accept=".pdf,.doc,.docx,.txt,.xlsx,.csv"
 					onChange={handleVersionFile}
 					className="sr-only"
 					aria-label={t("Choose a replacement file")}

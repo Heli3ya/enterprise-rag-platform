@@ -113,8 +113,8 @@ const FA: Record<string, string> = {
 	"Search analytics": "تحلیل جست‌وجو",
 
 	// -- document uploader -------------------------------------------
-	"Only PDF, Word (.doc/.docx), and TXT files are allowed.":
-		"فقط فایل‌های PDF، Word (.doc/.docx) و TXT مجاز هستند.",
+	"Only PDF, Word (.doc/.docx), TXT, Excel (.xlsx), and CSV files are allowed.":
+		"فقط فایل‌های PDF، Word (.doc/.docx)، TXT، Excel (.xlsx) و CSV مجاز هستند.",
 	"Please select a file before uploading.":
 		"پیش از بارگذاری، یک فایل انتخاب کنید.",
 	"Please select a department.": "یک دپارتمان انتخاب کنید.",

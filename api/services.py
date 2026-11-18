@@ -447,10 +447,38 @@ def rerank_results(query, results):
 
     reranked_data = response.json()
 
-    score_by_content = {
-        item["content"]: float(item["score"])
-        for item in reranked_data["results"]
-    }
+    # A 200 whose body is not the agreed shape is a contract violation,
+    # not a ranking. Raising the same error as an HTTP failure keeps a
+    # single fallback path in `hybrid_search`: an `AIServiceError` there
+    # means "search anyway, on hybrid scores", whereas a KeyError would
+    # reach the user as a 500 from `/api/search/`.
+    items = (
+        reranked_data.get("results")
+        if isinstance(reranked_data, dict)
+        else None
+    )
+
+    if not isinstance(items, list):
+        raise AIServiceError(
+            "The reranker returned an unexpected payload."
+        )
+
+    score_by_content = {}
+
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+
+        content = item.get("content")
+        score = item.get("score")
+
+        if not isinstance(content, str) or score is None:
+            continue
+
+        try:
+            score_by_content[content] = float(score)
+        except (TypeError, ValueError):
+            continue
 
     reranked_results = []
 
@@ -614,10 +642,28 @@ def hybrid_search(query, limit=5, user=None):
         score_key = "semantic_similarity"
         floor = RAG_MIN_SEMANTIC_SIMILARITY
 
+    # A literal hit is never irrelevant.
+    #
+    # The cross-encoder is trained mostly on English prose and scores a
+    # Persian table row like `| بلبرینگ | 45 | یورو |` at −1.25 even
+    # when the user typed a word that is *in* the row. Applying the
+    # floor to that answer produces "nothing in your knowledge base
+    # matched" for a query the corpus obviously contains — the worst
+    # possible reply, because it is confidently wrong about its own
+    # content. The length guard keeps a two-letter query from exempting
+    # everything it happens to appear in.
+    literal = (query or "").strip().casefold()
+
+    def is_literal_hit(item):
+        return (
+            len(literal) >= 3
+            and literal in (item.get("content") or "").casefold()
+        )
+
     kept = [
         item
         for item in reranked_results
-        if item.get(score_key, 0.0) >= floor
+        if item.get(score_key, 0.0) >= floor or is_literal_hit(item)
     ]
 
     if reranked_results and not kept:
@@ -635,6 +681,20 @@ def hybrid_search(query, limit=5, user=None):
             ),
             floor,
             len(reranked_results),
+        )
+
+    rescued = sum(
+        1
+        for item in kept
+        if item.get(score_key, 0.0) < floor
+    )
+
+    if rescued:
+        logger.info(
+            "Kept %s result(s) below the %s floor because the query "
+            "appears verbatim in the text.",
+            rescued,
+            score_key,
         )
 
     return kept[:limit]

@@ -39,14 +39,29 @@ generate_embedding_batch (Celery)
 | بررسی | مقدار | محل |
 |---|---|---|
 | اندازه | ≤ ۵ مگابایت | Serializer |
-| MIME واقعی | PDF، TXT، DOC، DOCX | Serializer با `magic.from_buffer` |
+| MIME واقعی | PDF، TXT، DOC، DOCX، XLSX، CSV | `documents/filetypes.py` با `magic.from_buffer` |
 | عنوان | غیرخالی | Serializer |
 | Tenant کاربر | باید وجود داشته باشد | View |
 | Tenant دپارتمان | باید با Tenant کاربر یکی باشد | View |
 | عضویت دپارتمان | کاربر عضو باشد یا Admin | View |
 | نرخ آپلود | ۱۰ در ساعت برای هر کاربر | django-ratelimit |
 
-نوع فایل با خواندن ۲۰۴۸ بایت اول و `magic.from_buffer(..., mime=True)` تشخیص داده می‌شود، نه با پسوند فایل. پس از تشخیص، نشانگر فایل به ابتدا برگردانده می‌شود.
+تشخیص نوع در `documents/filetypes.py` است، نه در Serializer. دو فرمت را نمی‌توان از روی بایت تشخیص داد:
+
+| پسوند | پاسخ libmagic | چرا کافی نیست |
+|---|---|---|
+| `.xlsx` | `application/zip` | هر فایل zip همین پاسخ را می‌گیرد |
+| `.csv` | `text/plain` | از `.txt` قابل تفکیک نیست |
+
+برای همین `effective_file_type` پسوند را می‌خواند، اما تنها وقتی به آن اعتماد می‌کند که بایت‌ها تأییدش کنند:
+
+- `.xlsx` → داخل zip باید پوشه `xl/` باشد.
+- `.docx` → داخل zip باید پوشه `word/` باشد.
+- `.csv` → ۶۴ کیلوبایت اول باید UTF-8 معتبر باشد؛ با decoder افزایشی خوانده می‌شود تا کاراکتر چندبایتیِ بریده در مرز خواندن، فایل سالم را خراب نشان ندهد.
+
+اگر پسوند و بایت‌ها هم‌خوان نباشند `INVALID_FILE_TYPE` برمی‌گردد و آپلود با `400` رد می‌شود. عمداً به MIME خام برنمی‌گردیم: MIME یک `.csv` خراب `text/plain` است که مجاز است، پس فایل پذیرفته می‌شد و بیست ثانیه بعد در Celery به ردیف `Failed` تبدیل می‌شد.
+
+نشانگر فایل پس از هر خواندن به ابتدا برگردانده می‌شود، چون همان هندل بعداً ذخیره می‌شود.
 
 ### ذخیره‌سازی
 
@@ -139,12 +154,54 @@ with transaction.atomic():
 | `text/plain` | `extract_txt_text` | استاندارد |
 | `application/msword` | `extract_word_text` | `python-docx` |
 | `application/vnd.openxmlformats-officedocument.wordprocessingml.document` | `extract_word_text` | `python-docx` |
+| `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` | `extract_tabular_rows` | `openpyxl` |
+| `text/csv` | `extract_tabular_rows` | `pandas` |
 
 نوع ناشناخته → `ValueError` و در نتیجه `Failed`.
 
 محدودیت شناخته‌شده: `python-docx` فرمت قدیمی `.doc` باینری را واقعاً پشتیبانی نمی‌کند، هرچند MIME آن مجاز است. فایل‌های `.doc` ممکن است در مرحله استخراج شکست بخورند.
 
 فایل‌های اسکن‌شده PDF بدون لایه متنی، متن تولید نمی‌کنند؛ OCR در پروژه وجود ندارد.
+
+### فایل‌های جدولی (XLSX / CSV)
+
+`documents/extractors/tabular.py`
+
+جدول متن نیست. اگر مثل بقیه فرمت‌ها با بودجه توکن تکه‌بندی شود، Chunk از وسط یک ردیف شروع می‌شود و سرستون‌ها را از دست می‌دهد؛ حاصل چیزی است شبیه `| 120 | USD |` که نه مدل Embedding می‌فهمد ۱۲۰ چیست و نه خواننده. برای همین این دو فرمت از `chunk_text` عبور نمی‌کنند و **ردیف به ردیف** تکه می‌شوند، و هر Chunk سرستون‌های خودش را تکرار می‌کند:
+
+```text
+Sheet: Prices
+| Product | Price | Unit | Code |
+| --- | --- | --- | --- |
+| Bearing Kit | 45 | EUR | BR-777 |
+```
+
+یک ردیف = یک Chunk، به دو دلیل: معیار پذیرش «جست‌وجوی یک کلمه در سلول، دقیقاً همان سطر را برگرداند» است نه «بلوکی شامل آن»؛ و هر Chunk یک فراخوانی Embedding است، پس اندازه دانه مستقیماً هزینه را تعیین می‌کند.
+
+تبدیل سلول‌ها:
+
+| ورودی | خروجی | چرا |
+|---|---|---|
+| `120.0` (float) | `120` | قیمت نباید `120.0` نمایش داده شود |
+| `9123456789.0` | `9123456789` | نه `9.12e+09` |
+| `date` | `2024-03-01` | ISO، قابل مقایسه و جست‌وجو |
+| `True` | `TRUE` | نه `1` |
+| `NaN` / `None` | رشته خالی | سلول خالی باید خالی بماند |
+| متن بلندتر از ۲۰۰ کاراکتر | کوتاه‌شده با `…` | یک سلول نباید کل پنجره Embedding را بگیرد |
+
+سرستون‌ها:
+
+- ستون بی‌نام → `Column N`.
+- نام تکراری → `Price (2)`؛ `| Price | Price |` به خواننده نمی‌گوید عدد از کدام ستون است.
+- اگر اولین ردیف غیرخالی کاملاً عددی باشد، سرستون نیست و داده است؛ در این حالت نام‌ها `Column N` می‌شوند تا رکورد اول قربانی نشود.
+
+سقف‌ها: `MAX_ROWS = 2000` (از `TABULAR_MAX_ROWS`)، `MAX_COLUMNS = 40`، `MAX_CELL_CHARS = 200`، `MAX_ROW_CHARS = 1200`. سقف ردیف در لاگ هشدار می‌دهد؛ بی‌صدا بریدن داده بدتر از بریدن با اعلام است.
+
+CSV: جداکننده با `sep=None` و موتور `python` حدس زده می‌شود (خروجی اکسل اروپایی با `;`)، `dtype=str` صفرهای ابتدایی شماره تلفن را حفظ می‌کند و `keep_default_na=False` سلول خالی را `NaN` نمی‌کند. فایل غیر UTF-8 با پیام روشن `ValueError` می‌دهد.
+
+XLSX: `load_workbook(read_only=True, data_only=True)` — `read_only` برگه را جریان می‌دهد و `data_only` نتیجه محاسبه‌شده فرمول را برمی‌گرداند، نه رشته `=B2*C2`.
+
+پیش‌نمایش این فایل‌ها (`documents/preview.py`) همان Chunkها را با فاصله خطوط به هم می‌چسباند؛ یعنی متنی که کاربر در کشوی استناد می‌بیند، دقیقاً همان متنی است که ایندکس شده.
 
 ## ۴. تکه‌بندی
 
@@ -169,6 +226,8 @@ chunk_text(text, chunk_size=400, overlap_percent=10)
 - Chunkهای خالی یا فقط فاصله حذف می‌شوند.
 
 اگر هیچ Chunkی تولید نشود، وظیفه با `ValueError("No text chunks were generated.")` شکست می‌خورد.
+
+> فایل‌های جدولی (`.xlsx`، `.csv`) به این تابع نمی‌رسند: `process_document` برای آن‌ها `extract_tabular_rows` را صدا می‌زند و هر ردیف خودش یک Chunk است (بخش ۳).
 
 ## ۵. ذخیره Chunkها
 
@@ -274,7 +333,7 @@ docker compose logs --tail=200 celery_worker
 برای پشتیبانی از فرمتی مثل `.pptx`:
 
 1. استخراج‌کننده در `documents/extractors/` اضافه کنید.
-2. MIME مجاز را در `ALLOWED_FILE_TYPES` (`documents/serializers.py`) اضافه کنید.
+2. MIME مجاز را در `ALLOWED_FILE_TYPES` و نگاشت پسوند را در `EXTENSION_FILE_TYPES` (هر دو در `documents/filetypes.py`) اضافه کنید.
 3. شاخه مربوطه را در `process_document` اضافه کنید.
 4. تست استخراج و تست پردازش اضافه کنید.
 5. این سند و [04-api-reference.md](04-api-reference.md) را به‌روزرسانی کنید.
@@ -287,6 +346,7 @@ docker compose logs --tail=200 celery_worker
 | اندازه Chunk | `documents/tasks.py` → `chunk_size=400` | دقت بازیابی در برابر تعداد بردار |
 | هم‌پوشانی | `documents/tasks.py` → `overlap_percent=10` | حفظ پیوستگی متن در مرز Chunkها |
 | اندازه batch | `EMBEDDING_BATCH_SIZE = 16` | حافظه و تعداد وظایف |
+| حداکثر ردیف جدول | `documents/extractors/tabular.py` → `TABULAR_MAX_ROWS` (پیش‌فرض ۲۰۰۰) | هزینه Embedding یک‌به‌یک با هر ردیف بالا می‌رود |
 | مدل Embedding | `tasks.py` + `ai_service/main.py` | باید هر دو هم‌خوان باشند (۳۸۴ بُعد) |
 
 > اگر مدل Embedding را عوض کنید، باید همه بردارهای موجود بازسازی شوند و بُعد جدید با `VectorField` و ایندکس HNSW هم‌خوان باشد. در غیر این صورت جست‌وجو خطا می‌دهد.

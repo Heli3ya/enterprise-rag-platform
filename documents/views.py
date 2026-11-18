@@ -3,8 +3,6 @@ import logging
 import mimetypes
 from urllib.parse import quote
 
-import magic
-
 from django.db import IntegrityError, transaction
 from django.http import FileResponse, Http404
 from django.utils.decorators import method_decorator
@@ -35,8 +33,8 @@ from .serializers import (
     DocumentListSerializer,
     DocumentVersionSerializer,
     ChunkDetailSerializer,
-    detect_file_type,
 )
+from .filetypes import effective_file_type
 from .tasks import process_document
 from .versioning import (
     ARCHIVED_STATUS,
@@ -112,7 +110,10 @@ class DocumentUploadView(generics.ListCreateAPIView):
                 "You cannot upload documents to this department."
             )
 
-        file_type = magic.from_buffer(file.read(2048), mime=True)
+        # The stored type drives both the extractor and what the UI
+        # shows, so it has to be the resolved one: a spreadsheet would
+        # otherwise be recorded as `application/zip`.
+        file_type = effective_file_type(file)
         file.seek(0)
 
         document = serializer.save(
@@ -438,7 +439,7 @@ class DocumentVersionView(generics.GenericAPIView):
                 tenant_id=locked.tenant_id,
                 title=title,
                 file_path=file,
-                file_type=detect_file_type(file),
+                file_type=effective_file_type(file),
                 file_size=file.size,
                 status="Pending",
                 uploaded_by=user,

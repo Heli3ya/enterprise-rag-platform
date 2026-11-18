@@ -54,7 +54,12 @@ class Document(models.Model):
     file_path = models.FileField(
         upload_to=tenant_document_upload_to
     )
-    file_type = models.CharField(max_length=20)
+    # Wide enough for the full OOXML MIME types. A `.docx` is
+    # `application/vnd.openxmlformats-officedocument.wordprocessingml.document`
+    # — 71 characters — so the old 20 silently depended on libmagic
+    # answering `application/octet-stream`, and the first `.xlsx` upload
+    # failed at the database with "value too long".
+    file_type = models.CharField(max_length=100)
 
     status = models.CharField(
         max_length=20,
