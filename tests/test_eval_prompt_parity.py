@@ -23,6 +23,15 @@ def test_evaluation_prompt_is_byte_identical_to_production():
     assert evaluation_prompt(query, RESULTS) == production_prompt(query, RESULTS)
 
 
+def test_evaluation_prompt_is_identical_for_a_persian_question():
+    # The answer-language and formatting rules are the newest part of the
+    # template, and the easiest to forget in the second copy: a Persian
+    # question is the case where the two prompts would diverge visibly.
+    query = "مرخصی سالانه چند روز است؟"
+
+    assert evaluation_prompt(query, RESULTS) == production_prompt(query, RESULTS)
+
+
 def test_prompt_embeds_every_chunk_id_and_the_question():
     prompt = evaluation_prompt("Who supports this document?", RESULTS)
 

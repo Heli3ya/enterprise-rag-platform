@@ -143,6 +143,26 @@ docker compose logs --tail=300 celery_worker | grep -i "document"
 - خطای شبکه به سرویس AI
 - نبود libmagic (در مرحله آپلود، نه پردازش)
 
+### OCR نتیجهٔ خالی یا نادرست میدهد
+
+اول ببینید آیا مشکل از نصب بومی (native) است یا از پارامترها:
+
+```bash
+docker compose exec -T django sh -c 'tesseract --list-langs 2>&1'
+docker compose exec -T django sh -c 'pdftoppm -v 2>&1 | head -2'
+docker compose logs --tail=200 celery_worker | grep -iE "ocr|tesseract"
+```
+
+| علامت | علت | اقدام |
+|---|---|---|
+| `Error opening data file ... fas.traineddata` | بسته زبان در ایمیج نیست | Docker Image را دوباره build کنید؛ `tesseract-ocr-fas` را حذف نکنید |
+| `No selectable text ... needs OCR` در پیشنمایش | عادی است؛ preview از Chunkها میخواند | وضعیت `/api/documents/{id}/` را بررسی کنید؛ اسناد Indexed قابل جستوجواند |
+| متن لاتین بهجای فارسی | `OCR_LANGUAGES` را عوض کردهاید | آن را به `fas+eng` برگردانید |
+| اعداد کدها اشتباه خوانده شدهاند | DPI با اندازه گلیف متناسب نیست | `OCR_DPI` را بین ۱۵۰ و ۳۰۰ آزمایش کنید؛ اعداد دستکاری نمیشوند، خطا از مرحله تشخیص است |
+| `This PDF needs OCR on N pages` | بیش از `OCR_MAX_PAGES` | سند را تقسیم کنید یا سقف را بالا ببرید (هزینه و حافظه worker را ببینید) |
+
+OCR فقط در worker اجرا میشود. اگر `django` را بدون rebuild قدیمی اجرا کنید، آپلود موفق میشود ولی هر صفحه اسکنشده با خطای `Tesseract is not installed` در Celery شکست میخورد.
+
 ### سند در `Processing` گیر کرده
 
 یعنی `generate_embedding_batch` شکست خورده و retryها تمام شده‌اند. لاگ را ببینید و سپس پردازش را دوباره اجرا کنید:
@@ -161,8 +181,8 @@ docker compose logs --tail=200 django | grep -i "ai_service\|connection"
 ```
 
 - `AI_SERVICE_URL` باید در Compose `http://ai_service:8001` باشد.
-- سرویس AI ممکن است در حال بارگذاری مدل باشد.
-- زمان‌بندی: `timeout=60` برای Embedding و Rerank، `timeout=120` برای LLM.
+- زمان‌بندی: `timeout=60` برای Embedding و Rerank، `AI_LLM_TIMEOUT` (پیش‌فرض ۳۰۰ ثانیه) برای تولید غیرجریانی، `timeout=360` برای جریان توکن.
+- اگر پاسخ `503` با متن `LLM request timed out` بود، یعنی تولید از سقف `AI_LLM_TIMEOUT` گذشته است، نه اینکه مدل بالا نیامده باشد. روی هاست CPU-only یک پاسخ چندجمله‌ای ۲۵ تا ۳۵ ثانیه طول می‌کشد و زیر بار از ۶۰ ثانیه هم می‌گذرد؛ به همین دلیل پیش‌فرض کلاینت (۶۰) کافی نبود. مقدار را با `AI_LLM_TIMEOUT` بالا ببرید، ولی همیشه کمتر از `AI_SERVICE_LLM_READ_TIMEOUT` نگه دارید تا خطای تمیز ۵۰۳ بماند و سوکت معلق نماند.
 
 ### نتیجه خالی
 
@@ -196,7 +216,7 @@ docker compose exec -T ai_service python -c \
 
 ### Citation خالی است
 
-- LLM ممکن است شناسه‌ها را با فرمت دیگری نوشته باشد؛ فقط `[123]` شناسایی می‌شود.
+- LLM ممکن است شناسه‌ها را با رقم فارسی یا عربی بنویسد (`[۶۶]`)؛ هر دو طرف رقم‌ها را به ASCII برمی‌گردانند، پس این حالت پوشش داده شده است. قالب‌هایی مثل `[chunk 66]` یا `(66)` شناسایی نمی‌شوند.
 - Chunk ارجاع‌شده ممکن است به Tenant یا دپارتمان دیگری تعلق داشته باشد و فیلتر شود.
 - اگر پاسخ بدون citation باشد، `citations` خالی است.
 

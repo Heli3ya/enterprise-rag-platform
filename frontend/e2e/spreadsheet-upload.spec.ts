@@ -185,7 +185,7 @@ test("a csv file passes the client-side gate too", async ({ page }) => {
   expect(uploadBody).toContain("prices.csv");
 });
 
-test("an image is still refused, and the message names the real formats", async ({
+test("a gif is still refused, and the message names the real formats", async ({
   page,
 }) => {
   let posted = false;
@@ -205,9 +205,9 @@ test("an image is still refused, and the message names the real formats", async 
   await signIn(page);
 
   await page.getByLabel("Choose a document file").setInputFiles({
-    name: "diagram.png",
-    mimeType: "image/png",
-    buffer: Buffer.from("89504e470d0a1a0a", "hex"),
+    name: "animation.gif",
+    mimeType: "image/gif",
+    buffer: Buffer.from("474946383961", "hex"),
   });
 
   await page.locator("#document-title").fill("Diagram");
@@ -215,9 +215,70 @@ test("an image is still refused, and the message names the real formats", async 
   await page.getByRole("button", { name: "Upload Document" }).click();
 
   await expect(
-    page.getByRole("alert").filter({ hasText: "XLSX" }),
+    page.getByRole("alert").filter({ hasText: "JPG" }),
   ).toBeVisible();
 
   // Refused locally: nothing was sent.
   expect(posted).toBeFalsy();
 });
+
+/**
+ * PNG/JPEG were added to the server before they were added to this JS
+ * gate. That is the same drift that hid spreadsheets from users, so a
+ * scanned letter must be shown leaving the browser.
+ */
+for (const [name, mimeType] of [
+  ["letter.png", "image/png"],
+  ["letter.jpg", "image/jpeg"],
+] as const) {
+  test(`${name} passes the client-side gate to OCR`, async ({ page }) => {
+    let uploadBody = "";
+
+    await page.route(/\/documents\/?$/, async (route) => {
+      if (route.request().method() === "POST") {
+        const body = await route.request().postDataBuffer();
+        uploadBody = body?.toString("utf8") ?? "";
+
+        await route.fulfill({
+          status: 201,
+          contentType: "application/json",
+          body: JSON.stringify({
+            id: 203,
+            title: "Scanned letter",
+            file_name: name,
+            filename: name,
+            department: 1,
+            department_name: "IT",
+            status: "Pending",
+            file_size: 512,
+          }),
+        });
+        return;
+      }
+
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify([]),
+      });
+    });
+
+    await signIn(page);
+
+    await page.getByLabel("Choose a document file").setInputFiles({
+      name,
+      mimeType,
+      buffer: Buffer.from("89504e470d0a1a0a", "hex"),
+    });
+
+    await page.locator("#document-title").fill("Scanned letter");
+    await page.locator("#document-department").selectOption("1");
+    await page.getByRole("button", { name: "Upload Document" }).click();
+
+    await expect(
+      page.getByRole("status").getByText("Document uploaded successfully."),
+    ).toBeVisible();
+
+    expect(uploadBody).toContain(name);
+  });
+}

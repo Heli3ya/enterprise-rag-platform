@@ -37,7 +37,18 @@ type DocumentItem = {
 
 type ApiList<T> = T[] | { results?: T[] };
 
-const ALLOWED_EXTENSIONS = [".pdf", ".doc", ".docx", ".txt", ".xlsx", ".csv"];
+const ALLOWED_EXTENSIONS = [
+	".pdf",
+	".doc",
+	".docx",
+	".txt",
+	".xlsx",
+	".csv",
+	".eml",
+	".jpg",
+	".jpeg",
+	".png",
+];
 
 /**
  * A quick client-side gate, not the authority.
@@ -58,6 +69,9 @@ const ALLOWED_MIME_TYPES = [
 	"application/octet-stream",
 	"text/plain",
 	"text/csv",
+	"message/rfc822",
+	"image/jpeg",
+	"image/png",
 ];
 
 function getErrorMessage(error: unknown): string {
@@ -241,7 +255,7 @@ export default function DocumentUploader({
 				setSelectedFile(null);
 				setError(
 					t(
-						"Only PDF, Word (.doc/.docx), TXT, Excel (.xlsx), and CSV files are allowed.",
+						"Only PDF, Word (.doc/.docx), TXT, Excel (.xlsx), CSV, EML, JPG, and PNG files are allowed.",
 					),
 				);
 
@@ -405,7 +419,7 @@ export default function DocumentUploader({
 		if (!isAllowedFile(file)) {
 			setError(
 				t(
-					"Only PDF, Word (.doc/.docx), TXT, Excel (.xlsx), and CSV files are allowed.",
+					"Only PDF, Word (.doc/.docx), TXT, Excel (.xlsx), CSV, EML, JPG, and PNG files are allowed.",
 				),
 			);
 			return;
@@ -530,7 +544,7 @@ export default function DocumentUploader({
 					<input
 						ref={fileInputRef}
 						type="file"
-						accept=".pdf,.doc,.docx,.txt,.xlsx,.csv"
+						accept=".pdf,.doc,.docx,.txt,.xlsx,.csv,.eml,.jpg,.jpeg,.png"
 						onChange={handleInputChange}
 						disabled={isUploading}
 						className="sr-only"
@@ -561,7 +575,7 @@ export default function DocumentUploader({
 							or click to select a file
 						</span>
 						<span className="mt-2 block text-xs text-gray-400">
-							Supported formats: PDF, DOC, DOCX, TXT, XLSX, CSV
+							Supported formats: PDF, DOC, DOCX, TXT, XLSX, CSV, EML, JPG, PNG
 						</span>
 					</button>
 				</div>
@@ -656,7 +670,7 @@ export default function DocumentUploader({
 				<input
 					ref={versionInputRef}
 					type="file"
-					accept=".pdf,.doc,.docx,.txt,.xlsx,.csv"
+					accept=".pdf,.doc,.docx,.txt,.xlsx,.csv,.eml,.jpg,.jpeg,.png"
 					onChange={handleVersionFile}
 					className="sr-only"
 					aria-label={t("Choose a replacement file")}

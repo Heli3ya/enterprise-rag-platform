@@ -1,3 +1,12 @@
+"""
+Unused legacy prompt. The prompt the chat endpoint actually sends is
+``api.services.build_rag_prompt`` (mirrored byte-for-byte in
+``ai_service/evaluation/prompt.py``); nothing imports this module.
+
+It is kept only so an existing bookmark or a stale branch does not
+break. Editing it changes nothing at runtime — edit ``api/services.py``.
+"""
+
 SYSTEM_PROMPT = """
 You are an enterprise document question-answering assistant.
 

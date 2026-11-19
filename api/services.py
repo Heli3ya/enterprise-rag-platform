@@ -731,6 +731,17 @@ def build_rag_prompt(query, results):
 
     context = "\n\n".join(context_parts)
 
+    # The answer-language rule is language-agnostic on purpose: it names
+    # no language, so a new UI language needs no code change here, and
+    # the prompt stays byte-identical to the evaluation copy (see
+    # tests/test_eval_prompt_parity.py). Detecting the language on the
+    # server was the alternative; it would have to be duplicated in two
+    # containers and would still leave the model free to ignore the hint.
+    #
+    # The formatting rules exist because the renderer is deliberately a
+    # small subset of Markdown (frontend/lib/answerFormat.ts). Asking for
+    # plain prose keeps the two in agreement instead of relying on the
+    # renderer to clean up whatever the model invents.
     return f"""
 You are an enterprise document question-answering assistant.
 
@@ -742,23 +753,45 @@ User question:
 Document context:
 {context}
 
+Answer rules:
+- Answer in the language of the user question. A Persian question must get a Persian answer even when the documents are in English, and an English question must get an English answer.
+- Use the punctuation of that language (for Persian: ، ؛ ؟) and copy numbers, codes, IDs, prices, dates and names from the context exactly as they are written there. Never translate, convert or reorder digits.
+- Write plain text. Do not use Markdown: no headings (#), no bold (**), no tables, no code blocks, no horizontal rules.
+- Be brief: two to four complete sentences, or a "- " bullet list when the answer is genuinely a list of items.
+
 Citation rules:
 - Use the provided context only.
 - After every sentence that relies on a document chunk, add the chunk ID in square brackets.
 - Use the exact chunk ID provided in the context.
+- Write the citation ID in Latin digits, exactly as it appears in the context: [66], not [۶۶].
 - Do not invent or modify citation IDs.
 - If a sentence uses multiple chunks, cite all relevant IDs.
 - Do not add citations for information that is not supported by the provided context.
+- Put the marker at the end of the sentence, right after the last word and before the final punctuation.
+- Example: "مرخصی سالانه ۲۰ روز است [66]." / "Annual leave is 20 days [66]."
 
 Return only the answer with inline citations.
 """.strip()
 
 
+# The answer-language rule asks for Persian digits, and a model applies
+# it to the citation marker too: a Persian answer can cite `[۶۶]`. The
+# id is a database integer, so it is normalized before lookup. Python's
+# `\d` already matches these digits and `int()` accepts them, but doing
+# it explicitly keeps the contract visible and independent of both.
+_DIGIT_TRANSLATION = str.maketrans(
+    "۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩",
+    "01234567890123456789",
+)
+
+
 def extract_citation_ids(answer):
+    normalized = (answer or "").translate(_DIGIT_TRANSLATION)
+
     return sorted(
         {
             int(citation_id)
-            for citation_id in re.findall(r"\[(\d+)\]", answer)
+            for citation_id in re.findall(r"\[(\d+)\]", normalized)
         }
     )
 

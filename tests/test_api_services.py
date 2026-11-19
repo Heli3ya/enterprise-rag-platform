@@ -674,3 +674,28 @@ def test_hybrid_search_respects_result_limit():
         )
 
     assert len(result) == 2
+
+
+def test_extract_citation_ids_reads_ascii_digits():
+    assert extract_citation_ids("Leave is 20 days [17].") == [17]
+
+
+def test_extract_citation_ids_reads_persian_digits():
+    # A live Persian answer cited `[۶۶]`: the answer-language rule asks
+    # for Persian digits and the model applied it to the marker too. The
+    # id is an integer, so it must survive the round trip.
+    assert extract_citation_ids("مرخصی ۲۰ روز است [۶۶].") == [66]
+
+
+def test_extract_citation_ids_reads_arabic_indic_digits():
+    assert extract_citation_ids("[...] [٩٣]") == [93]
+
+
+def test_extract_citation_ids_deduplicates_and_sorts_across_digit_sets():
+    answer = "اول [٩٣] بعد [93] و [17]."
+
+    assert extract_citation_ids(answer) == [17, 93]
+
+
+def test_extract_citation_ids_ignores_text_inside_brackets():
+    assert extract_citation_ids("مقدار [نامشخص] است.") == []

@@ -47,9 +47,38 @@ body {
 		color 0.2s ease;
 }
 
-/* Persian text needs a slightly taller line box to stay readable. */
+/* Persian text needs a slightly taller line box to stay readable, and a
+   font stack that actually has Persian glyphs. The Latin-first stack in
+   `body` falls back to whatever the system offers; Tahoma is present on
+   every Windows install and renders Persian properly, while Vazirmatn /
+   IRANSans are used when the user has them installed. */
 html[lang="fa"] body {
-	line-height: 1.75;
+	font-family:
+		"Vazirmatn",
+		"IRANSansX",
+		"IRANSans",
+		Tahoma,
+		"Segoe UI",
+		system-ui,
+		-apple-system,
+		Arial,
+		sans-serif;
+	line-height: 1.85;
+}
+
+/* A Latin or numeric run inside Persian text: a citation marker, an ID,
+   inline code. `unicode-bidi: isolate` keeps the run's own order, so
+   `[93]` is not mirrored into `]93[` by the RTL paragraph around it. */
+.isolate-ltr {
+	direction: ltr;
+	unicode-bidi: isolate;
+}
+
+/* Answer body: the indent uses `padding-inline-start`, so the marker
+   sits on the reading side of the line in both LTR and RTL. */
+.answer-content ul,
+.answer-content ol {
+	padding-inline-start: 1.35rem;
 }
 
 /* ------------------------------------------------------------------ *

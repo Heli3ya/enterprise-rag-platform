@@ -9,10 +9,15 @@ text matches what was indexed.
 
 import logging
 
-from .extractors.pdf import extract_pdf_text
+from .extractors.pdf import NoSelectableTextError, extract_pdf_text
 from .extractors.txt import extract_txt_text
 from .extractors.word import extract_word_text
-from .filetypes import TABULAR_FILE_TYPES
+from .filetypes import (
+    EMAIL_FILE_TYPES,
+    IMAGE_FILE_TYPES,
+    TABULAR_FILE_TYPES,
+)
+from .models import DocumentChunk
 
 
 logger = logging.getLogger(__name__)
@@ -35,6 +40,34 @@ class PreviewFileMissing(PreviewUnavailable):
     """The document row exists but its file is gone from storage."""
 
 
+def _stored_text(document):
+    """
+    The indexed passages of an OCR document, in reading order.
+
+    Re-running OCR in a web worker would hold a gunicorn thread for
+    seconds and put the same load on the CPU as a whole embedding
+    batch. The drawer only needs the text the citation came from, so
+    the stored chunks are both cheaper and more accurate.
+    """
+
+    chunks = list(
+        DocumentChunk.objects.filter(
+            document=document,
+            is_active=True,
+        )
+        .order_by("chunk_index")
+        .values_list("content", flat=True)
+    )
+
+    if not chunks:
+        raise PreviewUnavailable(
+            "This document has no extracted text yet. "
+            "Try again once processing has finished."
+        )
+
+    return "\n\n".join(chunks)
+
+
 def extract_document_text(document, max_characters=MAX_PREVIEW_CHARACTERS):
     """
     Return `(text, truncated)` for a document.
@@ -53,7 +86,13 @@ def extract_document_text(document, max_characters=MAX_PREVIEW_CHARACTERS):
     with handle:
         try:
             if document.file_type == "application/pdf":
-                text = extract_pdf_text(handle)
+                try:
+                    text = extract_pdf_text(handle, allow_ocr=False)
+                except NoSelectableTextError:
+                    text = _stored_text(document)
+
+            elif document.file_type in IMAGE_FILE_TYPES:
+                text = _stored_text(document)
 
             elif document.file_type == "text/plain":
                 text = extract_txt_text(handle)
@@ -72,6 +111,15 @@ def extract_document_text(document, max_characters=MAX_PREVIEW_CHARACTERS):
                 text = "\n\n".join(
                     extract_tabular_rows(handle, document.file_type)
                 )
+
+            elif document.file_type in EMAIL_FILE_TYPES:
+                # The preview is the passages as they were indexed: the
+                # header block, then the body. A mail client would render
+                # the HTML part; the drawer's job is to show the text a
+                # citation was drawn from, and that is this.
+                from .extractors.email import extract_email_text
+
+                text = extract_email_text(handle)
 
             else:
                 raise PreviewUnavailable(

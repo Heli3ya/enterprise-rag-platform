@@ -90,6 +90,17 @@ ENABLE_RERANKER = os.getenv(
 # How long an inference request waits for the models to finish loading.
 MODEL_LOAD_TIMEOUT = float(os.getenv("AI_MODEL_LOAD_TIMEOUT", "180"))
 
+# How long a single non-streaming generation may take.
+#
+# The LLM client falls back to 60s when no timeout is given, which is
+# shorter than a three-sentence answer takes on a CPU-only host: a real
+# Persian answer measured 27-33s idle and crossed 60s under load, so
+# `/api/llm/` answered 503 while the caller was still waiting patiently.
+# The budget must sit below the caller's (AI_SERVICE_LLM_READ_TIMEOUT,
+# 600s) so a genuinely stuck model still produces a clean 503 instead of
+# a dead socket, and in line with the streaming path's 360s read.
+LLM_TIMEOUT = float(os.getenv("AI_LLM_TIMEOUT", "300"))
+
 # How many CPU threads torch is allowed to use.
 TORCH_THREADS = int(os.getenv("AI_TORCH_THREADS", "2"))
 
@@ -725,6 +736,7 @@ def generate_answer(
             request.prompt,
             max_tokens=request.max_tokens,
             temperature=request.temperature,
+            timeout=LLM_TIMEOUT,
         )
     except Exception as exc:
         raise HTTPException(
