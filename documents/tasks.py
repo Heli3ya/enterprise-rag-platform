@@ -10,7 +10,11 @@ from .cleanup import purge_superseded_versions
 from .extractors.pdf import extract_pdf_text
 from .extractors.txt import extract_txt_text
 from .extractors.word import extract_word_text
-from .filetypes import TABULAR_FILE_TYPES
+from .filetypes import (
+    EMAIL_FILE_TYPES,
+    IMAGE_FILE_TYPES,
+    TABULAR_FILE_TYPES,
+)
 from .versioning import ARCHIVED_STATUS
 
 logger = logging.getLogger(__name__)
@@ -53,6 +57,9 @@ def process_document(document_id: int):
 
         with document.file_path.open("rb") as file:
             if document.file_type == "application/pdf":
+                # A scanned PDF has no text layer. The extractor keeps
+                # the text of real pages and sends only image-only ones
+                # to Tesseract, in the worker rather than the web proc.
                 extracted_text = extract_pdf_text(file)
 
             elif document.file_type == "text/plain":
@@ -79,6 +86,22 @@ def process_document(document_id: int):
                     file,
                     document.file_type,
                 )
+
+            elif document.file_type in EMAIL_FILE_TYPES:
+                from .extractors.email import extract_email_chunks
+
+                # An email is chunked by its own rules: the header block
+                # is glued to the first passage and repeated on every
+                # continuation, so a search for the sender or the
+                # subject works wherever the chunk boundary landed.
+                chunks = extract_email_chunks(file)
+
+            elif document.file_type in IMAGE_FILE_TYPES:
+                # No text can be selected from a photograph: this is
+                # the only path that reaches OCR for an image upload.
+                from .extractors.ocr import extract_image_text
+
+                extracted_text = extract_image_text(file)
 
             else:
                 raise ValueError(

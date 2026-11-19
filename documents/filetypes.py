@@ -2,18 +2,26 @@
 What a file *is*, as opposed to what it is called.
 
 libmagic reads the bytes, which is the right instinct: an extension is
-supplied by the user and costs nothing to lie about. Two of the formats
+supplied by the user and costs nothing to lie about. Three of the formats
 this platform accepts defeat it anyway.
 
 * `.xlsx` is a zip archive. libmagic answers `application/zip`, which is
   true and useless — every zip file gets the same answer.
 * `.csv` is plain text. libmagic answers `text/plain`, exactly what it
   answers for a `.txt` file, so the two cannot be told apart.
+* `.eml` usually reports `message/rfc822`, but falls back to
+  `text/plain` when the headers are sparse — the same answer a `.txt`
+  file gets.
 
-For those two the extension decides, but never on its own: it is trusted
-only when the bytes agree with it. A `.xlsx` that is not a spreadsheet,
-or a `.csv` that is not decodable text, is still rejected at upload
-instead of failing later in a background worker.
+JPEG and PNG, by contrast, are recognised from their magic bytes
+reliably. They are still mapped from the extension, so a renamed file
+is rejected at upload rather than indexed as a different format.
+
+For those three the extension decides, but never on its own: it is
+trusted only when the bytes agree with it. A `.xlsx` that is not a
+spreadsheet, a `.csv` that is not decodable text, or an `.eml` with no
+RFC 822 header block is still rejected at upload instead of failing
+later in a background worker.
 """
 
 import codecs
@@ -35,6 +43,15 @@ DOCX_MIME = (
 
 CSV_MIME = "text/csv"
 
+EMAIL_MIME = "message/rfc822"
+
+JPEG_MIME = "image/jpeg"
+PNG_MIME = "image/png"
+
+
+# A photograph has no text layer at all; these go straight to OCR.
+IMAGE_FILE_TYPES = {JPEG_MIME, PNG_MIME}
+
 
 # Returned by `effective_file_type` when the extension promises one
 # format and the bytes deliver another. It is deliberately not a real
@@ -52,6 +69,12 @@ INVALID_FILE_TYPE = "application/x-invalid-upload"
 TABULAR_FILE_TYPES = {XLSX_MIME, CSV_MIME}
 
 
+# An email carries its own metadata, and the extractor has to see the
+# headers before it can decide what the body is, so it gets its own
+# branch rather than being treated as plain text.
+EMAIL_FILE_TYPES = {EMAIL_MIME}
+
+
 ALLOWED_FILE_TYPES = {
     "application/pdf",
     "text/plain",
@@ -59,6 +82,9 @@ ALLOWED_FILE_TYPES = {
     DOCX_MIME,
     XLSX_MIME,
     CSV_MIME,
+    EMAIL_MIME,
+    JPEG_MIME,
+    PNG_MIME,
 }
 
 
@@ -67,6 +93,10 @@ EXTENSION_FILE_TYPES = {
     ".xlsx": XLSX_MIME,
     ".csv": CSV_MIME,
     ".docx": DOCX_MIME,
+    ".eml": EMAIL_MIME,
+    ".jpg": JPEG_MIME,
+    ".jpeg": JPEG_MIME,
+    ".png": PNG_MIME,
 }
 
 
@@ -96,6 +126,18 @@ ACCEPTED_MIME_FOR_EXTENSION = {
         "application/octet-stream",
         "application/msword",
     },
+    ".eml": {
+        EMAIL_MIME,
+        "message/global",
+        "text/rfc822",
+        # libmagic answers `text/plain` for a message whose headers are
+        # too sparse to classify; the header check below is what decides.
+        "text/plain",
+        "application/octet-stream",
+    },
+    ".jpg": {JPEG_MIME},
+    ".jpeg": {JPEG_MIME},
+    ".png": {PNG_MIME},
 }
 
 
@@ -197,5 +239,15 @@ def effective_file_type(file):
 
     if extension == ".csv" and not is_utf8_text(file):
         return INVALID_FILE_TYPE
+
+    if extension == ".eml":
+        # Not a UTF-8 check: an email body is whatever the sender's
+        # client produced, and it says so in its own headers. What is
+        # checked is the shape — an RFC 822 header block at the top —
+        # which is what a renamed `.txt` cannot fake.
+        from .extractors.email import looks_like_email
+
+        if not looks_like_email(file):
+            return INVALID_FILE_TYPE
 
     return expected

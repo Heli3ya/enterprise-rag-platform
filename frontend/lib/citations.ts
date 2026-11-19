@@ -56,7 +56,29 @@ export type AnswerSegment =
 	| { type: "text"; value: string; offset: number }
 	| { type: "citation"; chunkId: number; raw: string; offset: number };
 
-const CITATION_PATTERN = /\[(\d+)\]/g;
+/**
+ * A chunk id in brackets, in any digit set the model might use.
+ *
+ * A Persian answer sometimes carries the id in Persian digits (`[۶۶]`)
+ * even though the id is a database integer: the answer-language rule
+ * asks for Persian digits and the model applies it to the marker too.
+ * JavaScript's `\d` is ASCII-only, so without these ranges the marker
+ * stayed plain text and the citation was silently unreachable. The id is
+ * an identifier, not prose, so it is normalized back to ASCII and shown
+ * that way — matching the "Chunk 66" label in the source card.
+ */
+const CITATION_PATTERN = /\[([0-9\u0660-\u0669\u06f0-\u06f9]+)\]/g;
+
+const NON_ASCII_DIGITS = /[\u0660-\u0669\u06f0-\u06f9]/g;
+
+export function normalizeDigits(value: string): string {
+	return value.replace(NON_ASCII_DIGITS, (digit) => {
+		const code = digit.charCodeAt(0);
+		const zero = code >= 0x06f0 ? 0x06f0 : 0x0660;
+
+		return String(code - zero);
+	});
+}
 
 /**
  * Split an answer into plain text and citation markers so the UI can
@@ -80,10 +102,12 @@ export function parseAnswerSegments(content: string): AnswerSegment[] {
 			});
 		}
 
+		const chunkId = normalizeDigits(match[1]);
+
 		segments.push({
 			type: "citation",
-			chunkId: Number(match[1]),
-			raw: match[0],
+			chunkId: Number(chunkId),
+			raw: `[${chunkId}]`,
 			offset: matchIndex,
 		});
 

@@ -1,6 +1,12 @@
 import tiktoken
-from django.db import transaction
-from documents.models import DocumentChunk
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    # Annotation only: importing the model at runtime is what pulled the
+    # Django app registry into every caller of `chunk_text`.
+    from documents.models import DocumentChunk
+
+
 def chunk_text(
     text: str,
     chunk_size: int = 400,
@@ -41,9 +47,15 @@ def save_document_chunks(
     text: str,
     chunk_size: int = 400,
     overlap_percent: int = 10,
-) -> list[DocumentChunk]:
+) -> list["DocumentChunk"]:
     """
     Create and save document chunks in the database.
+
+    The Django imports are local so that `chunk_text` — the pure half of
+    this module — can be used by an extractor without a configured
+    application. Importing a model at module scope pulled the whole
+    Django app registry into every caller, including the extractors.
+
     Args:
         document: The Document instance the chunks belong to.
         text: Extracted document text.
@@ -52,6 +64,10 @@ def save_document_chunks(
     Returns:
         The created DocumentChunk instances.
     """
+    from django.db import transaction
+
+    from documents.models import DocumentChunk
+
     chunks = chunk_text(
         text=text,
         chunk_size=chunk_size,

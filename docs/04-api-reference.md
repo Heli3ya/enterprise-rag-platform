@@ -188,8 +188,13 @@ GET /api/documents/?include_archived=true
 - `application/vnd.openxmlformats-officedocument.wordprocessingml.document`
 - `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` (`.xlsx`)
 - `text/csv` (`.csv`)
+- `message/rfc822` (`.eml`)
+- `image/jpeg` (`.jpg`, `.jpeg`)
+- `image/png` (`.png`)
 
-برای `.xlsx` و `.csv`، پسوند هم شرط است: `libmagic` برای اکسل `application/zip` و برای CSV `text/plain` می‌گوید، پس نوع ذخیره‌شده از پسوند می‌آید و تنها وقتی پذیرفته می‌شود که بایت‌ها تأییدش کنند (پوشه `xl/` داخل zip، و UTF-8 معتبر برای CSV). فایل ناسازگار → `400` با پیام «Unsupported file type, or the file content does not match its extension.»
+برای `.xlsx`، `.csv` و `.eml`، پسوند هم شرط است: `libmagic` برای اکسل `application/zip`، برای CSV `text/plain` و برای برخی ایمیلها هم `text/plain` میگوید، پس نوع ذخیرهشده از پسوند میآید و تنها وقتی پذیرفته میشود که بایتها تأییدش کنند (پوشه `xl/` داخل zip، UTF-8 معتبر برای CSV، و بلوک هدر RFC 822 در ابتدای ایمیل). فایل ناسازگار → `400` با پیام «Unsupported file type, or the file content does not match its extension.»
+
+برای تصاویر، بایت‌ها تعیینکنندهاند: `.png` با محتوای JPEG یا متن ساده → `400`. یک عکس JPEG/PNG یا یک PDF اسکنشده بدون لایه متن، در worker از OCR عبور میکند و متن حاصل مثل سایر اسناد تکهبندی و ایندکس میشود.
 
 قواعد مجوز:
 

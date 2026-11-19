@@ -86,6 +86,7 @@ services:
       AI_ENABLE_RERANKER: ${AI_ENABLE_RERANKER:-1}
       AI_TORCH_THREADS: ${AI_TORCH_THREADS:-2}
       AI_MODEL_LOAD_TIMEOUT: ${AI_MODEL_LOAD_TIMEOUT:-180}
+      AI_LLM_TIMEOUT: ${AI_LLM_TIMEOUT:-300}
       OMP_NUM_THREADS: ${AI_TORCH_THREADS:-2}
       TOKENIZERS_PARALLELISM: "false"
       # RAG evaluation. Scheduling is off unless AI_EVAL_SCHEDULE_HOURS > 0.
@@ -146,6 +147,11 @@ services:
       AI_SERVICE_READ_TIMEOUT: ${AI_SERVICE_READ_TIMEOUT:-120}
       AI_SERVICE_LLM_READ_TIMEOUT: ${AI_SERVICE_LLM_READ_TIMEOUT:-600}
       DB_CONN_MAX_AGE: ${DB_CONN_MAX_AGE:-60}
+      # OCR runs only in the worker; these are read there, not here.
+      OCR_LANGUAGES: ${OCR_LANGUAGES:-fas+eng}
+      OCR_DPI: ${OCR_DPI:-150}
+      OCR_TIMEOUT: ${OCR_TIMEOUT:-120}
+      OCR_MAX_PAGES: ${OCR_MAX_PAGES:-20}
     ports:
       - "127.0.0.1:8000:8000"
     volumes:
@@ -203,6 +209,12 @@ services:
       AI_SERVICE_URL: "http://ai_service:8001"
       AI_INTERNAL_TOKEN: ${AI_INTERNAL_TOKEN:-}
       AI_SERVICE_READ_TIMEOUT: ${AI_SERVICE_READ_TIMEOUT:-120}
+      # One Celery concurrency slot is deliberate: Tesseract is CPU
+      # bound and shares the box with the embedding/rerank model.
+      OCR_LANGUAGES: ${OCR_LANGUAGES:-fas+eng}
+      OCR_DPI: ${OCR_DPI:-150}
+      OCR_TIMEOUT: ${OCR_TIMEOUT:-120}
+      OCR_MAX_PAGES: ${OCR_MAX_PAGES:-20}
     volumes:
       - media_data:/app/media
     depends_on:

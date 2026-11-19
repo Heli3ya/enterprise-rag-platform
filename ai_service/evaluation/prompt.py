@@ -39,6 +39,8 @@ def build_rag_prompt(query, results):
 
     context = "\n\n".join(context_parts)
 
+    # Byte-identical to api/services.py, comment for comment: the parity
+    # test compares the two prompts, not just the rendered rules.
     return f"""
 You are an enterprise document question-answering assistant.
 
@@ -50,13 +52,22 @@ User question:
 Document context:
 {context}
 
+Answer rules:
+- Answer in the language of the user question. A Persian question must get a Persian answer even when the documents are in English, and an English question must get an English answer.
+- Use the punctuation of that language (for Persian: ، ؛ ؟) and copy numbers, codes, IDs, prices, dates and names from the context exactly as they are written there. Never translate, convert or reorder digits.
+- Write plain text. Do not use Markdown: no headings (#), no bold (**), no tables, no code blocks, no horizontal rules.
+- Be brief: two to four complete sentences, or a "- " bullet list when the answer is genuinely a list of items.
+
 Citation rules:
 - Use the provided context only.
 - After every sentence that relies on a document chunk, add the chunk ID in square brackets.
 - Use the exact chunk ID provided in the context.
+- Write the citation ID in Latin digits, exactly as it appears in the context: [66], not [۶۶].
 - Do not invent or modify citation IDs.
 - If a sentence uses multiple chunks, cite all relevant IDs.
 - Do not add citations for information that is not supported by the provided context.
+- Put the marker at the end of the sentence, right after the last word and before the final punctuation.
+- Example: "مرخصی سالانه ۲۰ روز است [66]." / "Annual leave is 20 days [66]."
 
 Return only the answer with inline citations.
 """.strip()

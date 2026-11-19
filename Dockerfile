@@ -6,8 +6,19 @@ ENV PIP_NO_CACHE_DIR=1
 
 WORKDIR /app
 
+# Native tools for the OCR fallback. Both the API and the worker use the
+# same image: the worker rasterises scanned pages (poppler) and runs
+# Tesseract. The API does not call either (its preview reads stored
+# chunks), but sharing one image keeps the worker self-contained.
+# Persian and English traineddata are installed explicitly — the base
+# `tesseract-ocr` package ships `eng` only on Debian slim.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends libmagic1 \
+    && apt-get install -y --no-install-recommends \
+        libmagic1 \
+        tesseract-ocr \
+        tesseract-ocr-fas \
+        tesseract-ocr-eng \
+        poppler-utils \
     && rm -rf /var/lib/apt/lists/*
 
 RUN addgroup --system app \
