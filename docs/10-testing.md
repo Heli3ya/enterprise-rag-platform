@@ -228,6 +228,40 @@ npx playwright test --headed
 
 `playwright.config.ts` سرور Next را خودش اجرا می‌کند و در CI دو retry دارد. برای اجرای موفق سناریوی کامل، بک‌اند و داده اولیه لازم است؛ تست‌های `chat-feedback.spec.ts` و `answer-formatting.spec.ts` بک‌اند را کامل mock می‌کنند و به سرور نیاز ندارند.
 
+### تست جداگانه هر ساب تسک (رابط فرمتهای جدید و نسخهبندی)
+
+### تست جداگانه هر ساب تسک (رابط فرمتهای جدید و نسخهبندی)
+
+در **PowerShell** (ترمینال پیشفرض VS Code روی ویندوز) از `;` بهجای `&&` استفاده کنید — PowerShell 5.1 ترکیب `&&` را نمیشناسد:
+
+```powershell
+cd C:\Users\heliya\enterprise-rag-platform\frontend; node --test lib\__tests__\uploadFormats.test.mjs
+cd C:\Users\heliya\enterprise-rag-platform\frontend; npx playwright test e2e/format-guidance.spec.ts
+
+cd C:\Users\heliya\enterprise-rag-platform\frontend; npx playwright test e2e/document-versioning.spec.ts
+
+cd C:\Users\heliya\enterprise-rag-platform\frontend; node --test lib\__tests__\versionHistory.test.mjs
+cd C:\Users\heliya\enterprise-rag-platform\frontend; npx playwright test e2e/version-history.spec.ts
+```
+
+> نکته: آرگومان مسیر تست Playwright را حتی در PowerShell با `/` بنویسید (`e2e/...`). Playwright آرگومان را بهعنوان regex میخواند و `\` در regex یک escape است، پس `e2e\format-guidance.spec.ts` به `e2eformat-guidance.spec.ts` تبدیل میشود و خطای `No tests found` میدهد.
+
+همان دستورها در **Git Bash**:
+
+```bash
+cd frontend && node --test lib/__tests__/uploadFormats.test.mjs
+cd frontend && npx playwright test e2e/format-guidance.spec.ts
+cd frontend && npx playwright test e2e/document-versioning.spec.ts
+cd frontend && node --test lib/__tests__/versionHistory.test.mjs
+cd frontend && npx playwright test e2e/version-history.spec.ts
+```
+
+اگر اجرای Playwright در محیط محدود با خطای حذف دستجمعی `test-results` مواجه شد، خروجی را به مسیر دیگری ببرید:
+
+```powershell
+cd C:\Users\heliya\enterprise-rag-platform\frontend; npx playwright test e2e/version-history.spec.ts --output=C:\tmp\pw-ui-run --trace=off
+```
+
 ## ۹. چک‌لیست قبل از Merge
 
 - [ ] تست‌های جدید برای رفتار جدید نوشته شده
