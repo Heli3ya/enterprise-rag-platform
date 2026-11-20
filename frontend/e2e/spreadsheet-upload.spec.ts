@@ -212,8 +212,9 @@ test("a gif is still refused, and the message names the real formats", async ({
 
   await page.locator("#document-title").fill("Diagram");
   await page.locator("#document-department").selectOption("1");
-  await page.getByRole("button", { name: "Upload Document" }).click();
 
+  // The client gate refuses the file immediately, so the upload button
+  // stays disabled and there is nothing to click.
   await expect(
     page.getByRole("alert").filter({ hasText: "JPG" }),
   ).toBeVisible();

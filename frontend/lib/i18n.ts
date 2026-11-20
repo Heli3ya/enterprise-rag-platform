@@ -29,8 +29,7 @@ export function localeDirection(locale: Locale): "ltr" | "rtl" {
 const FA: Record<string, string> = {
 	// -- shared ------------------------------------------------------
 	"Enterprise RAG Platform": "پلتفرم RAG سازمانی",
-	"Document Knowledge Base & Enterprise RAG":
-		"پایگاه دانش اسناد و RAG سازمانی",
+	"Document Knowledge Base & Enterprise RAG": "پایگاه دانش اسناد و RAG سازمانی",
 	"Logged in as": "وارد شده به عنوان",
 	"Log out": "خروج",
 	"Upload Document": "بارگذاری سند",
@@ -50,13 +49,12 @@ const FA: Record<string, string> = {
 	"Sorry, an error occurred:": "متأسفم، خطایی رخ داد:",
 	"An unexpected error occurred.": "یک خطای غیرمنتظره رخ داد.",
 	"An error occurred during the chat.": "خطایی در گفتگو رخ داد.",
-	"Streaming response is not available.":
-		"پاسخ جریانی در دسترس نیست.",
+	"Streaming response is not available.": "پاسخ جریانی در دسترس نیست.",
 	"An unexpected error occurred": "یک خطای غیرمنتظره رخ داد",
 
 	// -- preferences / header ---------------------------------------
 	Language: "زبان",
-	"Theme": "پوسته",
+	Theme: "پوسته",
 	"Switch to English": "تغییر به انگلیسی",
 	"Switch to Persian": "تغییر به فارسی",
 	"Switch to dark mode": "تغییر به حالت تاریک",
@@ -122,6 +120,27 @@ const FA: Record<string, string> = {
 	"Document uploaded successfully.": "سند با موفقیت بارگذاری شد.",
 	"Document deleted successfully.": "سند با موفقیت حذف شد.",
 	"New version": "نسخهٔ جدید",
+	"Upload new version": "آپلود نسخهٔ جدید",
+	"Version history": "تاریخچه نسخه‌ها",
+	"View version history": "مشاهده تاریخچه نسخه‌ها",
+	"Close version history": "بستن تاریخچه نسخه‌ها",
+	"Loading version history...": "در حال بارگذاری تاریخچه نسخه‌ها...",
+	"No versions found.": "هیچ نسخهای یافت نشد.",
+	"{count} versions": "{count} نسخه",
+	Version: "نسخه",
+	Uploaded: "بارگذاری‌شده",
+	Size: "اندازه",
+	Current: "جاری",
+	"Drag and drop a file here": "فایل را اینجا رها کنید",
+	"or click to select a file": "یا برای انتخاب فایل کلیک کنید",
+	"Spreadsheets, emails and scanned images are indexed and searchable too.":
+		"صفحات گسترده، ایمیلها و تصاویر اسکنشده هم ایندکس شده و قابل جستوجو هستند.",
+	PDF: "PDF",
+	Word: "Word",
+	TXT: "TXT",
+	"Excel / CSV": "Excel / CSV",
+	Email: "ایمیل",
+	Images: "تصاویر",
 	"Choose a replacement file": "انتخاب فایل نسخهٔ جدید",
 	"v{version}": "v{version}",
 	"Version {version} uploaded. The previous version was archived.":
@@ -150,7 +169,8 @@ const FA: Record<string, string> = {
 	"Open citation": "باز کردن ارجاع",
 	Retry: "تلاش دوباره",
 	"Back to workspace": "بازگشت به میزکار",
-	"Document usage and search activity": "میزان استفاده از اسناد و فعالیت جست‌وجو",
+	"Document usage and search activity":
+		"میزان استفاده از اسناد و فعالیت جست‌وجو",
 	"Documents by department": "اسناد به تفکیک دپارتمان",
 	"Number of uploaded documents in each department":
 		"تعداد اسناد بارگذاری‌شده در هر دپارتمان",
@@ -254,8 +274,7 @@ const FA: Record<string, string> = {
 	"Reporting window": "بازه گزارش",
 	"{count} days": "{count} روز",
 	"Satisfaction rate": "درصد رضایت",
-	"Positive ratings ÷ ratings received":
-		"بازخورد مثبت ÷ کل بازخوردهای دریافتی",
+	"Positive ratings ÷ ratings received": "بازخورد مثبت ÷ کل بازخوردهای دریافتی",
 	"{rate} of all delivered answers": "{rate} از کل پاسخ‌های ارائه‌شده",
 	"Ratings received": "بازخوردهای دریافتی",
 	"Thumbs up {positive} · thumbs down {negative}":
@@ -292,10 +311,10 @@ const FA: Record<string, string> = {
 	"Show the answer": "نمایش پاسخ",
 	"{count} citations": "{count} منبع",
 	"Showing {from}–{to} of {total}": "نمایش {from}–{to} از {total}",
-	"Previous": "قبلی",
-	"Next": "بعدی",
-	"Question": "پرسش",
-	"Answer": "پاسخ",
+	Previous: "قبلی",
+	Next: "بعدی",
+	Question: "پرسش",
+	Answer: "پاسخ",
 };
 
 /**

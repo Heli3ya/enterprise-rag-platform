@@ -10,7 +10,14 @@ import {
 } from "react";
 import api from "@/lib/api";
 import { UPLOAD_SECTION_ID, UPLOAD_TRIGGER_ID } from "@/lib/focusTargets";
+import { formatFileSize } from "@/lib/formatters";
+import {
+	isAllowedUploadFile,
+	UPLOAD_ACCEPT,
+	UPLOAD_FORMAT_GROUPS,
+} from "@/lib/uploadFormats";
 import { useT } from "./PreferencesProvider";
+import VersionHistoryModal from "./VersionHistoryModal";
 
 type Department = {
 	id: number;
@@ -36,43 +43,6 @@ type DocumentItem = {
 };
 
 type ApiList<T> = T[] | { results?: T[] };
-
-const ALLOWED_EXTENSIONS = [
-	".pdf",
-	".doc",
-	".docx",
-	".txt",
-	".xlsx",
-	".csv",
-	".eml",
-	".jpg",
-	".jpeg",
-	".png",
-];
-
-/**
- * A quick client-side gate, not the authority.
- *
- * The server re-detects every file from its bytes (`documents/filetypes.py`),
- * because a browser's `file.type` is a guess made from the extension. This
- * list only exists to fail fast and to keep an obvious mistake from costing
- * an upload round-trip — so it is deliberately permissive: a spreadsheet can
- * arrive as `text/csv`, as `application/vnd.ms-excel` (Excel on Windows), or
- * as `application/octet-stream` when the browser has no mapping for it.
- */
-const ALLOWED_MIME_TYPES = [
-	"application/pdf",
-	"application/msword",
-	"application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-	"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-	"application/vnd.ms-excel",
-	"application/octet-stream",
-	"text/plain",
-	"text/csv",
-	"message/rfc822",
-	"image/jpeg",
-	"image/png",
-];
 
 function getErrorMessage(error: unknown): string {
 	const err = error as {
@@ -139,33 +109,6 @@ function getFileName(document: DocumentItem): string {
 	);
 }
 
-function formatFileSize(size?: number): string {
-	if (size === undefined || size === null || size <= 0) {
-		return "—";
-	}
-
-	if (size < 1024) {
-		return `${size} B`;
-	}
-
-	if (size < 1024 * 1024) {
-		return `${(size / 1024).toFixed(1)} KB`;
-	}
-
-	return `${(size / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function isAllowedFile(file: File): boolean {
-	const lowerName = file.name.toLowerCase();
-	const extensionAllowed = ALLOWED_EXTENSIONS.some((extension) =>
-		lowerName.endsWith(extension),
-	);
-
-	const mimeAllowed = !file.type || ALLOWED_MIME_TYPES.includes(file.type);
-
-	return extensionAllowed && mimeAllowed;
-}
-
 type DocumentUploaderProps = {
 	/**
 	 * Called after a successful upload so the dashboard can refresh its
@@ -193,6 +136,7 @@ export default function DocumentUploader({
 	const [deletingId, setDeletingId] = useState<number | null>(null);
 	const [versionTargetId, setVersionTargetId] = useState<number | null>(null);
 	const [versioningId, setVersioningId] = useState<number | null>(null);
+	const [historyTarget, setHistoryTarget] = useState<DocumentItem | null>(null);
 	const [uploadProgress, setUploadProgress] = useState(0);
 	const [error, setError] = useState("");
 	const [success, setSuccess] = useState("");
@@ -251,7 +195,7 @@ export default function DocumentUploader({
 				return;
 			}
 
-			if (!isAllowedFile(file)) {
+			if (!isAllowedUploadFile(file.name, file.type)) {
 				setSelectedFile(null);
 				setError(
 					t(
@@ -416,7 +360,7 @@ export default function DocumentUploader({
 		setError("");
 		setSuccess("");
 
-		if (!isAllowedFile(file)) {
+		if (!isAllowedUploadFile(file.name, file.type)) {
 			setError(
 				t(
 					"Only PDF, Word (.doc/.docx), TXT, Excel (.xlsx), CSV, EML, JPG, and PNG files are allowed.",
@@ -544,7 +488,7 @@ export default function DocumentUploader({
 					<input
 						ref={fileInputRef}
 						type="file"
-						accept=".pdf,.doc,.docx,.txt,.xlsx,.csv,.eml,.jpg,.jpeg,.png"
+						accept={UPLOAD_ACCEPT}
 						onChange={handleInputChange}
 						disabled={isUploading}
 						className="sr-only"
@@ -569,13 +513,38 @@ export default function DocumentUploader({
 							📄
 						</span>
 						<span className="block font-medium text-gray-700">
-							Drag and drop a file here
+							{t("Drag and drop a file here")}
 						</span>
 						<span className="mt-2 block text-sm text-gray-500">
-							or click to select a file
+							{t("or click to select a file")}
 						</span>
-						<span className="mt-2 block text-xs text-gray-400">
-							Supported formats: PDF, DOC, DOCX, TXT, XLSX, CSV, EML, JPG, PNG
+
+						{/* One chip per backend-supported family. The list is
+						    derived from the same module as `accept` and the JS
+						    gate, so the guidance cannot drift from behaviour. */}
+						<span
+							data-testid="upload-format-guide"
+							className="mt-4 flex flex-wrap justify-center gap-2"
+						>
+							{UPLOAD_FORMAT_GROUPS.map((group) => (
+								<span
+									key={group.key}
+									data-testid={`upload-format-${group.key}`}
+									title={group.extensions.join(", ")}
+									className="inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-white px-3 py-1 text-xs font-medium text-gray-600"
+								>
+									<span aria-hidden="true" className="text-base leading-none">
+										{group.icon}
+									</span>
+									<span>{t(group.label)}</span>
+								</span>
+							))}
+						</span>
+
+						<span className="mt-3 block text-xs text-gray-500">
+							{t(
+								"Spreadsheets, emails and scanned images are indexed and searchable too.",
+							)}
 						</span>
 					</button>
 				</div>
@@ -729,13 +698,26 @@ export default function DocumentUploader({
 												{document.title || getFileName(document)}
 
 												{(document.version ?? 1) > 1 && (
-													<span
-														data-testid="document-version-badge"
-														className="ms-2 inline-flex rounded-full bg-purple-50 px-2 py-0.5 text-xs font-medium text-purple-700"
-													>
-														{t("v{version}", {
-															version: String(document.version ?? 1),
-														})}
+													<span className="ms-2 inline-flex items-center gap-1">
+														<span
+															data-testid="document-version-badge"
+															className="inline-flex rounded-full bg-purple-50 px-2 py-0.5 text-xs font-medium text-purple-700"
+														>
+															{t("v{version}", {
+																version: String(document.version ?? 1),
+															})}
+														</span>
+														<button
+															type="button"
+															data-testid="document-version-count"
+															title={t("View version history")}
+															onClick={() => setHistoryTarget(document)}
+															className="rounded-full bg-purple-100 px-2 py-0.5 text-xs font-medium text-purple-800 hover:bg-purple-200"
+														>
+															{t("{count} versions", {
+																count: String(document.version ?? 1),
+															})}
+														</button>
 													</span>
 												)}
 
@@ -793,7 +775,16 @@ export default function DocumentUploader({
 														>
 															{versioningId === document.id
 																? t("Uploading...")
-																: t("New version")}
+																: t("Upload new version")}
+														</button>
+
+														<button
+															type="button"
+															onClick={() => setHistoryTarget(document)}
+															data-testid="document-version-history"
+															className="rounded-md px-2 py-1 text-sm font-medium text-purple-700 hover:bg-purple-50"
+														>
+															{t("Version history")}
 														</button>
 
 														<button
@@ -817,6 +808,11 @@ export default function DocumentUploader({
 					</div>
 				)}
 			</div>
+
+			<VersionHistoryModal
+				target={historyTarget}
+				onClose={() => setHistoryTarget(null)}
+			/>
 		</section>
 	);
 }

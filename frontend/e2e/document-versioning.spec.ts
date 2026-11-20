@@ -138,6 +138,7 @@ test("a first upload shows no version badge", async ({ page }) => {
 
 	await expect(page.getByText("Travel policy")).toBeVisible();
 	await expect(page.getByTestId("document-version-badge")).toHaveCount(0);
+	await expect(page.getByTestId("document-version-count")).toHaveCount(0);
 });
 
 test("uploading a replacement posts to the versions endpoint", async ({
@@ -163,6 +164,11 @@ test("uploading a replacement posts to the versions endpoint", async ({
 
 	await row.getByTestId("document-new-version").click();
 
+	await expect(row.getByTestId("document-new-version")).toContainText(
+		"Upload new version",
+	);
+	await expect(row.getByTestId("document-version-history")).toBeVisible();
+
 	const chooser = await chooserPromise;
 
 	await chooser.setFiles({
@@ -177,6 +183,9 @@ test("uploading a replacement posts to the versions endpoint", async ({
 
 	// The list is refetched, so the row now carries the new version.
 	await expect(page.getByTestId("document-version-badge")).toHaveText("v2");
+	await expect(page.getByTestId("document-version-count")).toHaveText(
+		"2 versions",
+	);
 	await expect(
 		page.getByText("Version 2 uploaded. The previous version was archived."),
 	).toBeVisible();
@@ -197,5 +206,6 @@ test("a platform-generated document offers no version action", async ({
 	const row = page.getByRole("row", { name: /System guide/ });
 
 	await expect(row.getByTestId("document-new-version")).toHaveCount(0);
+	await expect(row.getByTestId("document-version-history")).toHaveCount(0);
 	await expect(row).toContainText("Managed by the platform");
 });
